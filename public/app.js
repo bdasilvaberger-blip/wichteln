@@ -243,7 +243,7 @@ function initGL(){
   const cyl = new THREE.CylinderGeometry(1, 1, 1, 10, 1, false), sph = new THREE.SphereGeometry(1, 14, 10);
   GL.parts = {};
   for (const [key, id] of [['k', 1], ['p', 2]]) {
-    const c = new THREE.InstancedMesh(cyl, GL.mat[id], N * 14), sp = new THREE.InstancedMesh(sph, GL.mat[id], N * 18);
+    const c = new THREE.InstancedMesh(cyl, GL.mat[id], N * 14 + 220), sp = new THREE.InstancedMesh(sph, GL.mat[id], N * 18 + 160);
     c.frustumCulled = sp.frustumCulled = false; GL.scene.add(c); GL.scene.add(sp);
     GL.parts[key] = { c, sp, nc: 0, ns: 0 };
   }
@@ -767,6 +767,132 @@ function dogTo3D(){
   const tb = L(-.22, 0, bz + .05), wag = Math.sin(clock * (D.mode === 'pet' ? 22 : sn > .5 ? 16 : 10)) * (D.mode === 'pet' ? .08 : .05);
   addCyl(Wt, w(tb), w(add(tb, L(-.06 - sq * .02, wag, .13 + sq * .04))), .022 * R);
 }
+/* ---------- Santa: fliegt ab und zu mit Schlitten und Rentieren vorbei ----------
+   Der Fahrplan hängt nur an der Serverzeit, darum sehen alle ihn im selben Moment.
+   Mal wirft er Geschenke ab, mal holt er sie wieder. Antippen: er zerplatzt wie eine Seifenblase. */
+const SLOT = 45000, FLY_MS = 9000;
+const hh = (k, n) => { const v = Math.sin(k * 127.1 + n * 311.7) * 43758.5453; return v - Math.floor(v); };
+const SANTA = { k: null, on: false, popped: {}, box: null, x: 0, y: 0 };
+let GIFTS = [], POPS = [];
+function santaFlight(k){
+  const r = hh(k, 1); if (r >= .8) return null;
+  return { k, kind: r < .45 ? 'drop' : 'collect', t0: k * SLOT + 5000 + hh(k, 2) * 22000, dir: hh(k, 3) < .5 ? 1 : -1, row: hh(k, 4) };
+}
+function santaStep(dt){
+  const now = srvNow(), k = Math.floor(now / SLOT), f = santaFlight(k);
+  SANTA.on = false; SANTA.box = null;
+  if (f && now >= f.t0 && now < f.t0 + FLY_MS && !SANTA.popped[k]) {
+    const u = (now - f.t0) / FLY_MS, R = FH * (desk() ? 1.9 : 1.6), span = W + R * 5;
+    SANTA.k = k; SANTA.on = true; SANTA.f = f; SANTA.u = u; SANTA.R = R;
+    SANTA.x = f.dir > 0 ? -R * 2.2 + span * u : W + R * 2.2 - span * u;
+    /* in der oberen Bildhälfte, ganz vorne, damit nichts ihn verdeckt */
+    const yScr = top() + FH * .2 + f.row * (Hh * .32) + Math.sin(now / 420) * FH * .08;
+    SANTA.g = Hh + FH * 2; SANTA.z = (SANTA.g - yScr) / HZ;
+    santaTo3D();
+    /* Geschenke fallen lassen oder einsammeln */
+    if (f.kind === 'drop') for (let i = 0; i < 4; i++) {
+      const at = .18 + i * .19 + (hh(k, 10 + i) - .5) * .06, id = k * 10 + i;
+      if (u >= at && !GIFTS.some(G => G.id === id) && !(SANTA.dropped || (SANTA.dropped = {}))[id] && GIFTS.length < 14) { SANTA.dropped[id] = true; dropGift(id, k, i); }
+    }
+    else for (const G of GIFTS) if (G.state === 'rest' && Math.abs(G.x - (SANTA.x - f.dir * R * .3)) < R * .5) { G.state = 'up'; G.t = 0; G.fx = G.x; G.fy = G.y; }
+  }
+  for (const G of GIFTS) {
+    if (G.state === 'fall') { G.vy += FH * 9 * dt; G.y += G.vy * dt; if (G.y >= G.landY) { G.y = G.landY; if (G.vy > FH * 2) G.vy = -G.vy * .3; else { G.vy = 0; G.state = 'rest'; } } }
+    else if (G.state === 'up') { G.t += dt / .7; const e = ez(cl(G.t)), tx = SANTA.on ? SANTA.x - SANTA.f.dir * SANTA.R * .3 : G.fx, ty = SANTA.on ? SANTA.y : G.fy - FH * 3;
+      G.x = lerp(G.fx, tx, e); G.y = lerp(G.fy, ty, e); G.s = 1 - e * .7; if (G.t >= 1) G.gone = true; }
+  }
+  GIFTS = GIFTS.filter(G => !G.gone);
+}
+function dropGift(id, k, i){
+  const f = SANTA.f, R = SANTA.R, x = SANTA.x - f.dir * R * .35, y = SANTA.y + R * .1;
+  /* Landeplatz: Boden oder Buchstabe darunter, sicher unterhalb des Schlittens */
+  let gL = top() + hh(k, 20 + i) * (fbot() - top()), id2 = idAt(x, gL), zt = id2 >= 0 ? hOf(id2) : 0, landY = sy(gL, 0, zt);
+  for (let t = 0; t < 8 && landY < y + FH * .8; t++) { gL = Math.min(fbot(), gL + FH); id2 = idAt(x, gL); zt = id2 >= 0 ? hOf(id2) : 0; landY = sy(gL, 0, zt); }
+  if (x < FH * .3 || x > W - FH * .3) return;
+  GIFTS.push({ id, x, y, vy: -FH * .4, landY, state: 'fall', s: 1, spin: (hh(k, 30 + i) - .5) * .6 });
+}
+function santaTo3D(){
+  const S2 = SANTA, R = S2.R, a = S2.f.dir > 0 ? 0 : Math.PI, fw = v3(Math.cos(a), Math.sin(a), 0), rt = v3(-Math.sin(a), Math.cos(a), 0), up = v3(0, 0, 1);
+  const L = (f, r, z) => add(add(mul(fw, f * R), mul(rt, r * R)), mul(up, z * R));
+  const w = p => toW({ x: S2.x, g: S2.g }, { z: S2.z }, p), q = new THREE.Quaternion().setFromAxisAngle(_y, -a);
+  const K = GL.parts.k, Pk = GL.parts.p, cy = (A, B, r) => addCyl(K, w(L(...A)), w(L(...B)), r * R), line = (pts, r) => { for (let i = 1; i < pts.length; i++) cy(pts[i - 1], pts[i], r); };
+  const t = srvNow() / 1000;
+  /* Schlitten: Kufen, Streben, Kasten */
+  for (const sd of [1, -1]) {
+    const r = sd * .17;
+    line([[-.42, r, 0], [.28, r, 0], [.4, r, .05], [.44, r, .15], [.39, r, .22]], .016);
+    cy([-.25, r, 0], [-.25, r, .12], .014); cy([.15, r, 0], [.15, r, .12], .014);
+    line([[-.4, r, .12], [.3, r, .12], [.25, r, .3], [-.4, r, .3], [-.4, r, .44]], .016);
+    cy([-.4, r, .12], [-.4, r, .3], .016);
+  }
+  cy([-.4, .17, .44], [-.4, -.17, .44], .016); cy([.3, .17, .12], [.3, -.17, .12], .016); cy([.25, .17, .3], [.25, -.17, .3], .014);
+  /* Sack voller Geschenke */
+  addSph(Pk, w(L(-.3, 0, .38)), .11 * R); addSph(Pk, w(L(-.27, .02, .48)), .06 * R);
+  /* Santa: sitzend, runder Bauch, Mütze */
+  const hip = [-.1, 0, .2], chest = [-.14, 0, .46], head = [-.15, 0, .6];
+  cy(hip, chest, .03); addSph(K, w(L(...hip)), .035 * R); addSph(K, w(L(-.07, 0, .33)), .085 * R);
+  addSph(K, w(L(...head)), .07 * R);
+  addCyl(Pk, w(L(-.15, 0, .66)), w(L(-.24, 0, .77)), .045 * R); addSph(Pk, w(L(-.25, 0, .78)), .028 * R);
+  const wave = Math.sin(t * 6) * .03;
+  for (const sd of [1, -1]) {
+    const h = [-.1, sd * .06, .2], kn = [.03, sd * .06, .25], ft = [.08, sd * .06, .13];
+    line([h, kn, ft], .028); addSph(K, w(L(...kn)), .03 * R);
+    const sh = [-.14, sd * .09, .45], el = [-.04, sd * .12, .38], hd = [.09, sd * .07, .4 + wave * sd];
+    line([sh, el, hd], .026); addSph(K, w(L(...el)), .028 * R); addSph(K, w(L(...hd)), .026 * R);
+  }
+  /* zwei Rentiere im Galopp mit Geweih, an Leinen */
+  const ph = t * 9;
+  for (const [f0, o] of [[.95, 0], [1.55, 1.3]]) {
+    const b = .3 + Math.sin(ph + o) * .015;
+    addEll(K, w(L(f0, 0, b)), q, .2 * R, .07 * R, .075 * R);
+    const nk = [f0 + .25, 0, b + .17];
+    cy([f0 + .14, 0, b + .03], nk, .03); addSph(K, w(L(...nk)), .05 * R);
+    cy(nk, [f0 + .33, 0, b + .14], .024);
+    for (const sd of [1, -1]) {
+      const a0 = [f0 + .23, sd * .03, b + .21], m = [f0 + .19, sd * .07, b + .31];
+      line([a0, m, [f0 + .12, sd * .08, b + .37]], .011); cy(m, [f0 + .26, sd * .09, b + .36], .01);
+      const s1 = Math.sin(ph + o) * .07, s2 = Math.sin(ph + o + 1.4) * .07;
+      cy([f0 + .13, sd * .045, b - .03], [f0 + .26 + s1, sd * .045, b - .22], .02);
+      cy([f0 - .13, sd * .045, b - .03], [f0 - .27 - s2, sd * .045, b - .2], .02);
+    }
+    cy([f0 - .2, 0, b + .03], [f0 - .27, 0, b + .09], .016);
+  }
+  /* Leinen von den Händen und der Deichsel */
+  for (const sd of [1, -1]) cy([.09, sd * .07, .4], [.98, sd * .05, .38], .006);
+  cy([.42, 0, .18], [.76, 0, .3], .012); cy([1.15, 0, .32], [1.36, 0, .3], .012);
+  /* Trefferfläche und Mitte für das Zerplatzen */
+  const xs = [-.5, 2.1].map(f => S2.x + fw.x * f * R), yTop = sy(S2.g, 0, S2.z + R * .85), yBot = sy(S2.g, 0, S2.z - R * .05);
+  S2.y = sy(S2.g, 0, S2.z + R * .35);
+  S2.box = { x0: Math.min(...xs) - R * .15, x1: Math.max(...xs) + R * .15, y0: yTop - R * .15, y1: yBot + R * .15 };
+}
+const onSanta = (x, y) => { const b = SANTA.on && SANTA.box; return !!b && x > b.x0 && x < b.x1 && y > b.y0 && y < b.y1; };
+function popSanta(){
+  if (!SANTA.on || SANTA.popped[SANTA.k]) return false;
+  SANTA.popped[SANTA.k] = true;
+  const b = SANTA.box; POPS.push({ x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2, r: Math.max(b.x1 - b.x0, b.y1 - b.y0) * .45, t: 0 });
+  /* und alle Geschenke gleich mit, kurz nacheinander */
+  GIFTS.forEach((G, i) => POPS.push({ x: G.x, y: G.y - FH * .12, r: FH * .22, t: -.12 - i * .07, gift: G }));
+  return true;
+}
+function drawGifts(c){
+  const s = FH * .2;
+  for (const G of GIFTS) { if (G.popped) continue; c.save(); c.translate(G.x, G.y - s * .9 * G.s); if (G.state === 'fall') c.rotate(G.spin * Math.sin(G.y * .02)); drawGift(c, 0, 0, s * G.s); c.restore(); }
+}
+/* Seifenblase: dünner Ring, der aufgeht und verblasst, dazu kleine Spritzer */
+function drawPops(c, dt){
+  for (const P of POPS) {
+    P.t += dt; if (P.t < 0) continue;
+    if (P.gift && !P.gift.popped) { P.gift.popped = true; P.gift.gone = true; }
+    const q = cl(P.t / .45), e = 1 - Math.pow(1 - q, 3), rr = P.r * (.7 + .6 * e);
+    c.globalAlpha = 1 - q;
+    c.beginPath(); c.arc(P.x, P.y, rr, 0, 7); c.lineWidth = Math.max(.8, 2.2 * (1 - q)); c.strokeStyle = INK; c.stroke();
+    for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2 + P.r, r1 = rr * 1.08, r2 = rr * (1.08 + .25 * (1 - q));
+      c.beginPath(); c.moveTo(P.x + Math.cos(a) * r1, P.y + Math.sin(a) * r1); c.lineTo(P.x + Math.cos(a) * r2, P.y + Math.sin(a) * r2); c.strokeStyle = i % 2 ? PINK : INK; c.stroke(); }
+    c.globalAlpha = 1;
+  }
+  POPS = POPS.filter(P => P.t < .45);
+  GIFTS = GIFTS.filter(G => !G.gone);
+}
 function poopTo3D(){
   const P = GL.parts.p, R = FH;
   for (const p of POOPS) { const b = w0 => toW({ x: p.x, g: p.g }, { z: 0 }, w0);
@@ -1173,7 +1299,7 @@ function step(F, dt){
 }
 function render(dt){
   for (const k in GL.parts) { GL.parts[k].nc = 0; GL.parts[k].ns = 0; }
-  dogStep(dt); dogTo3D(); poopTo3D(); assignPoops();
+  dogStep(dt); dogTo3D(); poopTo3D(); assignPoops(); santaStep(dt);
   const c = ctx;
   c.setTransform(DPR, 0, 0, DPR, 0, 0);
   c.clearRect(0, 0, W, Hh);
@@ -1224,6 +1350,7 @@ function render(dt){
     c.beginPath(); c.arc(p.x, p.y, (1.2 + q * (5 + p.big * 4)) * us, 0, 7);
     c.lineWidth = Math.max(.3, 1.2 * (1 - q)); c.strokeStyle = `rgba(0,0,0,${(1 - q) * .85})`; c.stroke();
   }
+  drawGifts(c); drawPops(c, dt);
   c.textAlign = 'center'; c.textBaseline = 'bottom';
   for (const F of Fs) {
     const b = F.box; if (!b || F.flyHide) continue;
@@ -1393,6 +1520,7 @@ let drag = null;
 const pick = (x, y) => [...Fs].sort((a, b) => b.g - a.g).find(F => F.box && x >= F.box.x0 - 12 && x <= F.box.x1 + 12 && y >= F.box.y0 - 12 && y <= F.box.y1 + 12);
 cv.addEventListener('pointerdown', e => {
   if (view !== 'pick' && view !== 'lobby') return;
+  if (onSanta(e.clientX, e.clientY)) { if (popSanta()) rtSend({ t: 'santa', k: SANTA.k }); return; }
   if (onDog(e.clientX, e.clientY) && !pick(e.clientX, e.clientY)) { tapDog(); return; }
   const F = pick(e.clientX, e.clientY);
   if (!F) {
@@ -1405,7 +1533,7 @@ cv.addEventListener('pointerdown', e => {
   cv.classList.add('grabbing');
 });
 cv.addEventListener('pointermove', e => {
-  if (!drag) { const F = (view === 'pick' || view === 'lobby') && pick(e.clientX, e.clientY); cv.classList.toggle('grab', !!F); cv.classList.toggle('info', !F && (view === 'pick' || view === 'lobby') && (onInfo(e.clientX, e.clientY) || onDog(e.clientX, e.clientY))); return; }
+  if (!drag) { const F = (view === 'pick' || view === 'lobby') && pick(e.clientX, e.clientY); cv.classList.toggle('grab', !!F); cv.classList.toggle('info', !F && (view === 'pick' || view === 'lobby') && (onInfo(e.clientX, e.clientY) || onDog(e.clientX, e.clientY) || onSanta(e.clientX, e.clientY))); return; }
   const F = drag.F;
   if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 6) { drag.moved = true; F.act = null; F.lean = null; F.sit = null; F.fetch = null; F.pickUp = null; F.pet = null; endTrick(F); F.topGoal = null; F.topPath = null; F.drag = { vx: 0 }; F.dropZ = 0; }
   if (!drag.moved) return;
@@ -1597,6 +1725,7 @@ function onRt(m){
   if (now - (RT.seen[key] || 0) < (d.t === 'poop' ? 2500 : 400)) return; RT.seen[key] = now;
   if (d.t === 'trick' && from != null && from !== S.me && typeof d.k === 'string' && Object.hasOwn(TRICKS, d.k) && S.claims[from] != null) { const F = fig(from), at = Number(d.at); if (F && Number.isFinite(at) && Math.abs(at - srvNow()) < 15000) startTrick(d.k, F, at); }
   else if (d.t === 'poop') dogPoop();
+  else if (d.t === 'santa' && d.k === SANTA.k) popSanta();
   else if (d.t === 'join' && from != null && (view === 'pick' || view === 'lobby') && !busy) refresh().then(syncFigs).catch(() => {});
 }
 
