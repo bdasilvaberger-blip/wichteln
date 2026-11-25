@@ -1058,7 +1058,7 @@ function render(dt){
   c.textAlign = 'center'; c.textBaseline = 'bottom';
   for (const F of Fs) {
     const b = F.box; if (!b || F.flyHide) continue;
-    const name = F.i === S.me ? 'Du' : S.claims[F.i];
+    const name = F.i === S.me ? 'You' : S.claims[F.i];
     let y = b.head[1] - 2;
     if (view === 'lobby' && S.draws[S.me] == null && eligible().includes(F.i)) {
       const hop = Math.sin(clock * 4 + F.seed) * 2 - (F.hit ? 6 : 0), s2 = (F.hit ? 1.5 : 1) * (desk() ? 1.2 : 1);
