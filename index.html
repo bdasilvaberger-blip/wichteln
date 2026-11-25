@@ -22,6 +22,18 @@ body{background:var(--w);color:var(--k);font:400 16px/1.5 "Jost","Futura","Centu
 #cd{position:fixed;top:max(10px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:9;margin:0;padding:10px 20px;border:1.5px solid var(--k);border-radius:999px;background:var(--w);color:var(--k);font-size:15px;line-height:1.2;white-space:nowrap;font-variant-numeric:tabular-nums;pointer-events:none}
 #cd b{font-weight:500}
 @media(min-width:1024px){#cd{font-size:18px;padding:12px 26px}}
+#info{position:fixed;z-index:6;background:transparent;border:0;padding:0;cursor:pointer;border-radius:12px}
+#info:focus-visible{outline:2px solid var(--k);outline-offset:2px}
+#info[hidden]{display:none}
+#faq{border:1.5px solid var(--k);border-radius:22px;padding:26px 24px 22px;max-width:min(380px,calc(100vw - 32px));width:100%;color:var(--k);background:var(--w)}
+#faq::backdrop{background:rgba(255,255,255,.75)}
+#faq h2{margin:0 0 16px;font-weight:500;font-size:22px}
+#faq dl{margin:0 0 20px;display:grid;gap:12px}
+#faq dl div{display:grid;grid-template-columns:96px 1fr;gap:10px;align-items:baseline}
+#faq dt{color:var(--mid);font-size:14px}
+#faq dd{margin:0;font-size:16px;line-height:1.35}
+#faq .pill{width:100%}
+@media(min-width:1024px){#faq dd{font-size:17px}#faq h2{font-size:26px}}
 #reset{position:fixed;top:max(6px,env(safe-area-inset-top));right:6px;z-index:9;font:inherit;font-size:20px;min-width:44px;min-height:44px;color:var(--mid);background:none;border:0;cursor:pointer}
 #scene{position:fixed;inset:0;transition:opacity .8s var(--ease),transform 1s var(--ease)}
 #scene.away{opacity:0;pointer-events:none}
@@ -78,6 +90,18 @@ button.pill.pink{background:var(--p);border-color:var(--p);color:var(--k)}
 </section>
 
 <canvas id="fly" aria-hidden="true"></canvas>
+<button id="info" type="button" aria-label="Infos zum Wichteln" aria-haspopup="dialog"></button>
+<dialog id="faq" aria-labelledby="faqT">
+  <h2 id="faqT">Wichteln 2026</h2>
+  <dl>
+    <div><dt>Datum</dt><dd>Samstag, 26. Dezember 2026</dd></div>
+    <div><dt>Zeit</dt><dd>Ab 20:00 Uhr</dd></div>
+    <div><dt>Ort</dt><dd>In Zürich. Der genaue Ort folgt.</dd></div>
+    <div><dt>Anmeldung</dt><dd>Bis 1. Dezember, 12:00 Uhr</dd></div>
+    <div><dt>Auslosen</dt><dd>Nach dem Anmeldeschluss tippst du auf Auslosen und siehst, wen du beschenkst. Behalte es für dich.</dd></div>
+  </dl>
+  <button class="pill" type="button" id="faqClose">Schliessen</button>
+</dialog>
 <div id="foot">
   <button class="pill pink" type="button" id="drawBtn" hidden>Auslosen</button>
   <button id="scroll" type="button" aria-label="Weiter"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1v13M2.5 8.5 8 14l5.5-5.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
@@ -246,6 +270,17 @@ function buildLetters(){
       for (const q of comp) L.ids[q] = fill;
     }
   }
+  /* Info Zeichen: ein pinkes i, aufrecht wie ein Schild, an einem freien Platz; niemand läuft hindurch */
+  {
+    const w = FH * .22, rd = FH * .14, len = FH * .8, gap = FH * .2, dep = FH * .1, H = len + gap + rd * 2;
+    const half = Math.max(w / 2, rd);
+    const inside = (dx, dz, m) => Math.abs(dx) <= half + m && Math.abs(dz) <= dep / 2 + m;
+    const fits = (cx, cy) => { const m = FH * .55; for (let y = cy - (dep / 2 + m) * C; y <= cy + (dep / 2 + m) * C; y += 2) for (let x = cx - half - m; x <= cx + half + m; x += 2) { const X = Math.round(x), Y = Math.round(y); if (X < 0 || Y < 0 || X >= W || Y >= Hh || L.ids[Y * W + X] !== 0) return false; } return cy - H * HZ > top() - FH * .5; };
+    const cand = []; for (let fy = .98; fy >= .5; fy -= .05) for (const fx of [.93, .07, .82, .18, .5, .7, .3]) cand.push([W * fx, top() + (bottom() - top()) * fy]);
+    const at = cand.find(([x, y]) => fits(x, y)) || [W * .93, bottom() - FH * .4];
+    L.info = { x: at[0], gy: at[1], w, len, rd, gap, H, dep, half };
+    for (let y = Math.max(0, Math.floor(at[1] - (dep / 2 + 3) * C)); y <= Math.min(Hh - 1, Math.ceil(at[1] + (dep / 2 + 3) * C)); y++) for (let x = Math.max(0, Math.floor(at[0] - half - 3)); x <= Math.min(W - 1, Math.ceil(at[0] + half + 3)); x++) L.ids[y * W + x] = 255;
+  }
   /* Nischen sperren: morphologisches Schliessen je Buchstabe, nur was dazukommt */
   const r = Math.round(FH * .3);
   L.G.forEach((g, i) => {
@@ -270,6 +305,17 @@ function buildLetters(){
     const closed = pass(pass(m, true), false);
     for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) { const p = (y + by) * W + x + bx; if (closed[y * bw + x] && L.ids[p] === 0) L.ids[p] = 255; }
   });
+  /* Info Schild in 3D: Strich und Punkt, aufrecht, zur Kamera gedreht */
+  if (GL.info) { GL.scene.remove(GL.info); GL.info.geometry.dispose(); }
+  { const I = L.info, sh = [];
+    const st = new THREE.Shape(); st.moveTo(-I.w / 2, 0); st.lineTo(I.w / 2, 0); st.lineTo(I.w / 2, I.len); st.lineTo(-I.w / 2, I.len); st.lineTo(-I.w / 2, 0); sh.push(st);
+    const dot = new THREE.Shape(); dot.absarc(0, I.len + I.gap + I.rd, I.rd, 0, Math.PI * 2, false); sh.push(dot);
+    const geo = new THREE.ExtrudeGeometry(sh, { depth: I.dep, bevelEnabled: false, curveSegments: 24 }); geo.translate(0, 0, -I.dep / 2);
+    GL.info = new THREE.Mesh(geo, GL.mat[4]); GL.info.position.set(I.x - W / 2, 0, (I.gy - Hh / 2) / C); GL.scene.add(GL.info);
+    /* unsichtbarer Knopf genau darüber, für Maus, Finger und Tastatur */
+    const b = $('info'), top_ = I.gy - (I.dep / 2) * C - I.H * HZ, bot = I.gy + I.dep / 2 * C;
+    Object.assign(b.style, { left: (I.x - I.half - 10) + 'px', top: (top_ - 10) + 'px', width: (I.half * 2 + 20) + 'px', height: (bot - top_ + 20) + 'px' });
+  }
   /* 3D Blöcke aus den Vektorformen der Schrift */
   for (const m of GL.letters) { GL.scene.remove(m); m.geometry.dispose(); m.children.forEach(c => c.geometry.dispose()); }
   GL.letters = L.G.map(g => {
@@ -296,7 +342,7 @@ function initGL(){
     #endif
     vN = normalize(normalMatrix * n); gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0); }`;
   const fsx = `uniform float uId; varying vec3 vN; void main(){ gl_FragColor = vec4(normalize(vN) * .5 + .5, uId / 255.0); }`;
-  GL.mat = [0, 1, 2, 3].map(id => new THREE.ShaderMaterial({ vertexShader: vs, fragmentShader: fsx, uniforms: { uId: { value: id } }, side: THREE.DoubleSide }));
+  GL.mat = [0, 1, 2, 3, 4, 5].map(id => new THREE.ShaderMaterial({ vertexShader: vs, fragmentShader: fsx, uniforms: { uId: { value: id } }, side: THREE.DoubleSide }));
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), GL.mat[0]); ground.rotation.x = -Math.PI / 2; ground.position.y = -.01;
   GL.scene.add(ground);
   GL.cam = new THREE.OrthographicCamera(-1, 1, 1, -1, -6000, 6000);
@@ -309,6 +355,13 @@ function initGL(){
     c.frustumCulled = sp.frustumCulled = false; GL.scene.add(c); GL.scene.add(sp);
     GL.parts[key] = { c, sp, nc: 0, ns: 0 };
   }
+  /* Beagle: weiss mit Kontur, schwarzer Sattel und Ohren; bleibt auch im Konturbild */
+  GL.dog = {};
+  for (const [key, id] of [['w', 5], ['k', 1]]) {
+    const c = new THREE.InstancedMesh(cyl, GL.mat[id], 16), sp = new THREE.InstancedMesh(sph, GL.mat[id], 16);
+    c.frustumCulled = sp.frustumCulled = false; GL.scene.add(c); GL.scene.add(sp);
+    GL.dog[key] = { c, sp, nc: 0, ns: 0 };
+  }
   /* Filter: Kanten aus Normalen, Tiefe und Farbkennung */
   GL.post = new THREE.Scene(); GL.pcam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   GL.pmat = new THREE.ShaderMaterial({
@@ -320,8 +373,9 @@ function initGL(){
         float da = texture2D(tD, vUv + o).x, db = texture2D(tD, vUv - o).x;
         vec3 n0 = c0.xyz * 2.0 - 1.0;
         float e = 0.0;
-        e = max(e, smoothstep(.86, .7, dot(n0, a.xyz * 2.0 - 1.0)));
-        e = max(e, smoothstep(.86, .7, dot(n0, b.xyz * 2.0 - 1.0)));
+        float soft = step(4.5, c0.w * 255.0) * step(c0.w * 255.0, 5.5);
+        e = max(e, smoothstep(.86, .7, dot(n0, a.xyz * 2.0 - 1.0)) * (1.0 - soft));
+        e = max(e, smoothstep(.86, .7, dot(n0, b.xyz * 2.0 - 1.0)) * (1.0 - soft));
         e = max(e, step(.5, abs(a.w - c0.w) * 255.0)); e = max(e, step(.5, abs(b.w - c0.w) * 255.0));
         e = max(e, smoothstep(uDT, uDT * 2.0, abs(da + db - 2.0 * d0)));
         return e;
@@ -338,6 +392,7 @@ function initGL(){
         vec3 col = mix(vec3(1.0), vec3(0.0), e);
         if (id > .5 && id < 1.5) col = vec3(0.0);
         if (id > 1.5 && id < 2.5) col = uPink;
+        if (id > 3.5 && id < 4.5) col = mix(uPink, vec3(0.0), e);
         gl_FragColor = vec4(col, 1.0);
       }`
   });
@@ -712,6 +767,7 @@ function build(){
   const fh2 = Math.round(cl(letters.fs * .43, 22, desk() ? 74 : 60));
   if (Math.abs(fh2 - FH) > 1) { FH = fh2; buildLetters(); for (let n = 0; n < 6 && letters.tooClose; n++) { letters.shrink *= .9; buildLetters(); } }
   buildSpots();
+  makeDog();
   Fs = [];
   wantedFigs().forEach(i => {
     const F = makeFig(i);
@@ -748,6 +804,99 @@ function leanPose(F, dt, held){
   return P;
 }
 const SMOKE = [];
+/* ---------- Beagle: schnüffelt, läuft herum, macht ab und zu einen Haufen ---------- */
+let DOG = null, POOPS = [];
+function makeDog(){
+  let x = W / 2, g = (top() + bottom()) / 2;
+  for (let t = 0; t < 200; t++) { const x2 = FH + Math.random() * (W - 2 * FH), g2 = top() + Math.random() * (bottom() - top()); if (clearAt(-1, x2, g2, .3)) { x = x2; g = g2; break; } }
+  DOG = { x, g, a: Math.random() * 6.28, sp: 0, ph: 0, mode: 'walk', t: 3, lastPoop: -15, sniff: 0, squat: 0 };
+  POOPS = [];
+}
+function dogStep(dt){
+  const D = DOG; if (!D) return;
+  D.t -= dt; D.ph += dt * (2 + D.sp * 14);
+  if (D.t <= 0) {
+    const r = Math.random();
+    if (D.mode !== 'poop' && clock - D.lastPoop > 25 && POOPS.length < 2 && r < .3) { D.mode = 'poop'; D.t = 2.6; }
+    else if (D.mode === 'walk' && r < .6) { D.mode = 'sniff'; D.t = 1.5 + Math.random() * 2.5; }
+    else { D.mode = 'walk'; D.t = 2.5 + Math.random() * 4; }
+  }
+  const free = a2 => { for (const L of [.15, .3, .45]) if (!clearAt(-1, D.x + Math.cos(a2) * L * FH, D.g + Math.sin(a2) * L * FH * C, .22)) return false; return true; };
+  let want = 0;
+  if (D.mode === 'walk') {
+    want = .5;
+    let desired = D.a + (Math.sin(clock * .7 + 1) * 1.2 + Math.sin(clock * 1.9) * .6) * dt;
+    if (D.x < FH || D.x > W - FH || D.g < top() || D.g > bottom()) desired = Math.atan2((Hh / 2 - D.g) / C, W / 2 - D.x);
+    for (const F of Fs) { if (F.surf >= 0 || F.drag) continue; const dx = F.x - D.x, dg = (F.g - D.g) / C, d = Math.hypot(dx, dg);
+      if (d < FH * .5) desired -= Math.sign(Math.sin(Math.atan2(dg, dx) - D.a) || 1) * 2 * dt * (1 - d / (FH * .5)); }
+    let pick = null; for (const da of [0, .4, -.4, .8, -.8, 1.3, -1.3, 2, -2, Math.PI]) if (free(desired + da)) { pick = desired + da; break; }
+    if (pick === null) { want = 0; D.a += 2 * dt; } else { let d = pick - D.a; d = Math.atan2(Math.sin(d), Math.cos(d)); D.a += Math.sign(d) * Math.min(Math.abs(d), 3 * dt); if (Math.abs(d) > 1) want *= .3; }
+  }
+  D.sp = lerp(D.sp, want, Math.min(1, dt * 4));
+  const nx = D.x + Math.cos(D.a) * D.sp * FH * dt, ng = D.g + Math.sin(D.a) * D.sp * FH * dt * C;
+  if (D.sp > .01 && clearAt(-1, nx, ng, .15)) { D.x = nx; D.g = ng; }
+  D.sniff = lerp(D.sniff, D.mode === 'sniff' ? 1 : D.mode === 'walk' ? .25 : 0, Math.min(1, dt * 4));
+  D.squat = lerp(D.squat, D.mode === 'poop' && D.t > .5 ? 1 : 0, Math.min(1, dt * 5));
+  if (D.mode === 'poop' && D.t < 1.2 && !D.dropped) { D.dropped = true; D.lastPoop = clock;
+    POOPS.push({ x: D.x - Math.cos(D.a) * FH * .32, g: D.g - Math.sin(D.a) * FH * .32 * C, born: clock, who: null }); }
+  if (D.mode !== 'poop') D.dropped = false;
+}
+function addEll(P, c, q, sx, sy, sz){ _s.set(sx, sy, sz); _m.compose(c, q, _s); P.sp.setMatrixAt(P.ns++, _m); }
+function dogTo3D(){
+  const D = DOG; if (!D) return;
+  const R = FH * 1.3, fw = v3(Math.cos(D.a), Math.sin(D.a), 0), rt = v3(-Math.sin(D.a), Math.cos(D.a), 0), up = v3(0, 0, 1);
+  const L = (f, r, z) => add(add(mul(fw, f * R), mul(rt, r * R)), mul(up, z * R));
+  const w = p => toW({ x: D.x, g: D.g }, { z: 0 }, p), q = new THREE.Quaternion().setFromAxisAngle(_y, -D.a);
+  const Wt = GL.dog.w, K = GL.dog.k, mv = cl(D.sp / .3), sq = D.squat, sn = D.sniff;
+  const nod = Math.sin(clock * 9) * .012 * sn;
+  /* Rumpf, Sattel, Brust */
+  const bz = .24 - sq * .05;
+  addEll(Wt, w(L(0, 0, bz + .01 * Math.sin(D.ph * 2) * mv)), q, .23 * R, .1 * R, .1 * R);
+  addEll(K, w(L(-.02, 0, bz + .055)), q, .14 * R, .06 * R, .095 * R);
+  /* Kopf und Schnauze: beim Schnüffeln tief am Boden */
+  const head = L(.25 + sn * .04, 0, .36 - sn * .22 + nod);
+  addSph(Wt, w(head), .075 * R);
+  const nose = add(head, L(.09, 0, -.03 - sn * .03));
+  addCyl(Wt, w(head), w(nose), .038 * R); addSph(K, w(nose), .022 * R);
+  for (const sd of [1, -1]) addEll(K, w(add(head, L(-.01, sd * .065, -.05))), q, .035 * R, .075 * R, .022 * R);
+  /* Beine im Trab, hinten beim Hinsetzen eingeknickt */
+  for (const [f, r, off, back] of [[.15, .065, 0, 0], [.15, -.065, Math.PI, 0], [-.15, .065, Math.PI, 1], [-.15, -.065, 0, 1]]) {
+    const hip = L(f, r, bz - .03 - (back ? sq * .06 : 0)), sw = Math.sin(D.ph + off) * .06 * mv, lift = Math.max(0, Math.cos(D.ph + off)) * .03 * mv;
+    const foot = L(f + sw + (back ? sq * .06 : 0), r, lift);
+    addCyl(Wt, w(hip), w(foot), .028 * R);
+  }
+  /* Schwanz: wedelt, beim Haufen hoch */
+  const tb = L(-.22, 0, bz + .05), wag = Math.sin(clock * (sn > .5 ? 16 : 10)) * .05;
+  addCyl(Wt, w(tb), w(add(tb, L(-.06 - sq * .02, wag, .13 + sq * .04))), .022 * R);
+}
+function poopTo3D(){
+  const P = GL.parts.k, R = FH;
+  for (const p of POOPS) { const b = w0 => toW({ x: p.x, g: p.g }, { z: 0 }, w0);
+    addSph(P, b(v3(0, 0, .03 * R)), .04 * R); addSph(P, b(v3(0, 0, .07 * R)), .03 * R); addSph(P, b(v3(.005 * R, 0, .1 * R)), .018 * R); }
+}
+/* den Haufen aufsammeln: die nächste freie Figur geht hin, bückt sich und hebt ihn auf */
+function assignPoops(){
+  for (const p of POOPS) {
+    if (p.who && (!Fs.includes(p.who) || (p.who.fetch !== p && !(p.who.pickUp && p.who.pickUp.p === p)))) p.who = null;
+    if (p.who || clock - p.born < 2.5) continue;
+    const ok = F => F.surf < 0 && !F.act && !F.lean && !F.sit && !F.drag && !F.leave && !(F.enter > 0) && !F.fetch && !F.pickUp && !F.flyHide && F.i !== sel && !F.skipPoop?.has(p);
+    const F = Fs.filter(ok).sort((a, b) => Math.hypot(a.x - p.x, a.g - p.g) - Math.hypot(b.x - p.x, b.g - p.g))[0];
+    if (F) { p.who = F; F.fetch = p; F.fetchT = 0; F.goal = null; F.goalStage = 0; }
+  }
+}
+function pickPose(F, dt){
+  const K = F.pickUp; K.t += dt;
+  { let d = K.a - F.a; d = Math.atan2(Math.sin(d), Math.cos(d)); F.a += Math.sign(d) * Math.min(Math.abs(d), 6 * dt); }
+  const b = ez(seg(K.t, .15, .7)) * (1 - ez(seg(K.t, 1.1, 1.7)));
+  /* den letzten Schritt ausklingen lassen, dann bücken */
+  const st = (1 - ez(cl(K.t / .4))) * .36 * cl((F.vs || 0) / .65); F.ph += dt * 7 * (st > .01 ? 1 : 0);
+  const P = walkPose(F, { stride: st });
+  P.pelvis.z -= .2 * b; P.lean = .6 * b;
+  P.handR = { r: lerp(-.17, -.06, b), f: lerp(0, .26, b), z: lerp(.3, .05, b) };
+  if (K.t > .95 && !K.done) { K.done = true; POOPS = POOPS.filter(p => p !== K.p); }
+  if (K.t >= 1.8) { F.pickUp = null; F.pause = .3; F.vs = 0; }
+  return P;
+}
 /* Sitzen auf der Kante: umdrehen, an die Kante, hinsetzen, Beine baumeln lassen */
 /* Weg auf der Buchstabenoberfläche zur nächsten Kletterstelle (Raster, breit genug für die Füsse) */
 function topRoute(id, from){
@@ -831,6 +980,8 @@ function step(F, dt){
     const ax = D.pvx == null ? 0 : (D.svx - D.pvx) * idt, ay = D.pvy == null ? 0 : (D.svy - D.pvy) * idt; D.pvx = D.svx; D.pvy = D.svy;
     F.sw = F.sw || { th: 0, om: 0, ph: 0, pom: 0 };
     swingStep(F, cl(ax, -6000, 6000), cl(ay, -6000, 6000), dt, true);
+  } else if (F.pickUp) {
+    P = pickPose(F, dt);
   } else if (F.sit) {
     P = sitPose(F, dt, held);
   } else if (F.lean) {
@@ -856,7 +1007,7 @@ function step(F, dt){
       if (F.spot && !F.topGoal && !held && !F.leave && !F.sitDone && F.topT > .8) { F.sitDone = true; if (Math.random() < .55) F.sit = { t: 0, dur: 4 + Math.random() * 5, sp: F.spot, a0: F.a, x0: F.x, g0: F.g }; }
       if (F.topT > (F.topWait || 3) && F.spot && !F.topGoal && !F.sit && !held) { actFromPlan(F, F.spot, true); F.topT = 0; F.spot = null; }
     }
-    if (!onTop && !F.goal && !held && !F.leave && !(F.enter > 0) && letters.spots.length && Math.random() < dt * .1) {
+    if (!onTop && !F.goal && !F.fetch && !held && !F.leave && !(F.enter > 0) && letters.spots.length && Math.random() < dt * .1) {
       /* nur Stellen mit freiem Weg, freiem Einstieg und einem Buchstaben, auf dem niemand ist */
       const sight = sp => { const dx = sp.S2.x - F.x, dg = sp.S2.g - F.g, n = Math.ceil(Math.hypot(dx, dg / C) / (FH * .15)); for (let k = 1; k <= n; k++) if (!clearAt(-1, F.x + dx * k / n, F.g + dg * k / n)) return false; return true; };
       const busy = sp => Fs.some(o => o !== F && (o.goal === sp || o.spot === sp || o.surf === sp.id || (o.spot && o.spot.id === sp.id) || (o.goal && o.goal.id === sp.id) || (o.act && (o.act.to === sp.id || o.act.from === sp.id)) || Math.hypot(o.x - sp.S.x, (o.g - sp.S.g) / C) < FH * .6 || Math.hypot(o.x - sp.S2.x, (o.g - sp.S2.g) / C) < FH * .5));
@@ -919,7 +1070,7 @@ function step(F, dt){
         if (F.stillT > .8) { let best = F.a, bn = -1; for (let k = 0; k < 16; k++) { const a2 = k * Math.PI / 8; let n = 0; for (const L of [.2, .4, .6, .8, 1]) { if (clear(F.x + Math.cos(a2) * L * FH, F.g + Math.sin(a2) * L * FH * C)) n++; else break; } if (n > bn) { bn = n; best = a2; } }
           F.escA = best; F.escT = 1.2; F.stillT = 0; F.goal = null; F.goalStage = 0; } }
       else F.stillT = 0;
-      const desired = F.leave ? (F.x < W / 2 ? Math.PI : 0) : F.enter > 0 ? (F.x < W / 2 ? 0 : Math.PI) : F.escT > 0 ? F.escA : F.goal ? Math.atan2((F.goal.S2.g - F.g) / C, F.goal.S2.x - F.x) : F.a + cl(turn, -4, 4) * dt;
+      const desired = F.fetch && !F.leave ? Math.atan2((F.fetch.g - F.g) / C, F.fetch.x - F.x) : F.leave ? (F.x < W / 2 ? Math.PI : 0) : F.enter > 0 ? (F.x < W / 2 ? 0 : Math.PI) : F.escT > 0 ? F.escA : F.goal ? Math.atan2((F.goal.S2.g - F.g) / C, F.goal.S2.x - F.x) : F.a + cl(turn, -4, 4) * dt;
       if (F.goal && F.escT <= 0) want *= cl(Math.hypot(F.goal.S2.x - F.x, (F.goal.S2.g - F.g) / C) / (FH * .7), .3, 1);
       let pick = null, da0 = 0;
       for (const da of [0, .35, -.35, .7, -.7, 1.1, -1.1, 1.6, -1.6, 2.2, -2.2, Math.PI]) {
@@ -937,14 +1088,21 @@ function step(F, dt){
       /* steht die Figur knapp an einer Wand (nach dem Klettern), darf sie sich wegbewegen */
       if (clear(nx, ng) || (idAt(nx, ng) === F.surf && (free(F.a) || (F.escT > 0 && clearAt(F.surf, nx, ng, .1))))) { F.x = nx; F.g = ng; }
       else F.sp *= .5;
-      if (!F.goal && !F.leave && !(F.enter > 0) && Math.random() < dt * .05) F.pause = 1 + Math.random() * 2.5;
+      if (!F.goal && !F.fetch && !F.leave && !(F.enter > 0) && Math.random() < dt * .05) F.pause = 1 + Math.random() * 2.5;
     }
+    if (DOG && F.surf < 0 && !F.goalStage) { const dx = F.x - DOG.x, dg = (F.g - DOG.g) / C, d = Math.hypot(dx, dg), m = FH * .34;
+      if (d < m && d > .01) { const push = Math.min(m - d, FH * 1.5 * dt), px = F.x + dx / d * push, pg = F.g + dg / d * push * C; if (clear(px, pg)) { F.x = px; F.g = pg; } } }
     /* Abstand halten: Figuren stehen nie ineinander */
     if (!F.goalStage) for (const o of Fs) if (o !== F && !o.drag && (o.act || o.surf === F.surf)) {
       const dx = F.x - o.x, dg = (F.g - o.g) / C, d = Math.hypot(dx, dg), m = FH * .34;
       if (d < m) { const k = d > .01 ? 1 / d : 0, push = Math.min(m - d, FH * 1.5 * dt), ux = d > .01 ? dx * k : Math.cos(F.seed), ug = d > .01 ? dg * k : Math.sin(F.seed);
         const px = F.x + ux * push, pg = F.g + ug * push * C; if (clear(px, pg)) { F.x = px; F.g = pg; } }
     }
+    /* beim Haufen angekommen: bücken und aufheben */
+    if (F.fetch) { F.fetchT += dt; const p = F.fetch, d = Math.hypot(p.x - F.x, (p.g - F.g) / C);
+      if (!POOPS.includes(p)) F.fetch = null;
+      else if (d < FH * .26) { F.fetch = null; F.pickUp = { t: 0, p, a: Math.atan2((p.g - F.g) / C, p.x - F.x) }; F.sp = 0; }
+      else if (F.fetchT > 14) { (F.skipPoop = F.skipPoop || new Set()).add(p); F.fetch = null; p.who = null; } }
     /* Beine nur bewegen, wenn die Figur wirklich vorankommt */
     const moved = Math.hypot(F.x - x0, (F.g - g0) / C);
     F.vs = lerp(F.vs || 0, moved / Math.max(dt, 1e-4) / FH, Math.min(1, dt * 10));
@@ -970,6 +1128,8 @@ function step(F, dt){
 }
 function render(dt){
   for (const k in GL.parts) { GL.parts[k].nc = 0; GL.parts[k].ns = 0; }
+  for (const k in GL.dog) { GL.dog[k].nc = 0; GL.dog[k].ns = 0; }
+  dogStep(dt); dogTo3D(); poopTo3D(); assignPoops();
   const c = ctx;
   c.setTransform(DPR, 0, 0, DPR, 0, 0);
   c.clearRect(0, 0, W, Hh);
@@ -986,6 +1146,7 @@ function render(dt){
   }
   /* wer den Platz verlassen hat, verschwindet */
   for (let i = Fs.length - 1; i >= 0; i--) { const F = Fs[i]; if (F.leave && (F.x < -FH * .8 || F.x > W + FH * .8 || (F.surf >= 0 && !F.spot && !F.act))) Fs.splice(i, 1); }
+  for (const k in GL.dog) { const P = GL.dog[k]; P.c.count = P.nc; P.sp.count = P.ns; P.c.instanceMatrix.needsUpdate = P.sp.instanceMatrix.needsUpdate = true; }
   for (const k in GL.parts) { const P = GL.parts[k]; P.c.count = P.nc; P.sp.count = P.ns; P.c.instanceMatrix.needsUpdate = P.sp.instanceMatrix.needsUpdate = true; }
   /* erst Buchstaben allein (für die Konturen), dann alles (für die Figuren mit Verdeckung) */
   const figs = []; for (const k in GL.parts) figs.push(GL.parts[k].c, GL.parts[k].sp);
@@ -1125,6 +1286,7 @@ function setView(v, quiet){
   $('nameStage').classList.toggle('on', v === 'name');
   $('resStage').classList.toggle('on', v === 'result');
   $('scroll').hidden = v !== 'pick' || !open;
+  $('info').hidden = v !== 'pick' && v !== 'lobby';
   $('drawBtn').hidden = v !== 'lobby' || open;
   if (v === 'pick') say(!open ? 'Die Anmeldung ist geschlossen. Ausgelost wird unter den Angemeldeten.' : sel == null ? 'Wähle deinen Avatar. Tippe auf eine schwarze Figur.' + cd : 'Gute Wahl. Scrolle weiter.');
   if (v === 'name') { say('Trag deinen Namen ein.'); setTimeout(() => $('nameIn').focus(), RM ? 0 : 700); }
@@ -1157,7 +1319,7 @@ cv.addEventListener('pointerdown', e => {
 cv.addEventListener('pointermove', e => {
   if (!drag) { const F = (view === 'pick' || view === 'lobby') && pick(e.clientX, e.clientY); cv.classList.toggle('grab', !!F); return; }
   const F = drag.F;
-  if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 6) { drag.moved = true; F.act = null; F.lean = null; F.sit = null; F.topGoal = null; F.topPath = null; F.drag = { vx: 0 }; F.dropZ = 0; }
+  if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 6) { drag.moved = true; F.act = null; F.lean = null; F.sit = null; F.fetch = null; F.pickUp = null; F.topGoal = null; F.topPath = null; F.drag = { vx: 0 }; F.dropZ = 0; }
   if (!drag.moved) return;
   const nx = e.clientX + drag.ox;
   F.drag.vx = lerp(F.drag.vx, (nx - F.x) / .016, .3);
@@ -1195,12 +1357,13 @@ cv.addEventListener('pointercancel', endDrag);
 
 /* Weiter: Knopf, Scrollen, Wischen */
 function next(){
+  if ($('faq').open) return;
   if (view !== 'pick' || !isOpen()) return;
   if (sel == null) { say('Wähle zuerst deinen Avatar. Tippe auf eine schwarze Figur.', true); return; }
   $('nameIn').value = ''; setView('name');
   startFly('in', [{ F: fig(sel), wave: true }], $('nameC'));
 }
-function back(){ if (view !== 'name') return; setView('pick'); startFly('out', [{ F: fig(sel), wave: true }], $('nameC')); }
+function back(){ if (view !== 'name' || $('faq').open) return; setView('pick'); startFly('out', [{ F: fig(sel), wave: true }], $('nameC')); }
 $('scroll').addEventListener('click', next);
 let lockW = 0;
 addEventListener('wheel', e => { const now = Date.now(); if (now < lockW || Math.abs(e.deltaY) < 20) return; lockW = now + 1000; e.deltaY > 0 ? next() : back(); }, {passive:true});
@@ -1243,6 +1406,9 @@ $('drawBtn').addEventListener('click', () => {
   };
   tick();
 });
+$('info').addEventListener('click', () => $('faq').showModal());
+$('faqClose').addEventListener('click', () => $('faq').close());
+$('faq').addEventListener('click', e => { if (e.target === $('faq')) $('faq').close(); });
 $('resBack').addEventListener('click', () => { setView('lobby'); startFly('out', [{ F: fig(S.me), turn: -.35 }, { F: fig(S.draws[S.me]), wave: true, turn: .35 }], $('resC')); });
 $('reset').addEventListener('click', () => { S = fresh(); sel = null; save(); build(); setView('pick'); });
 
