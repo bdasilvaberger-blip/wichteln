@@ -782,8 +782,8 @@ const TRICKS = { twerk: 4.4, roll: 3.8, jump: 6 * .62 + .4, pet: 6 };
 const turnTo = (F, a, rate) => { let d = a - F.a; d = Math.atan2(Math.sin(d), Math.cos(d)); F.a += Math.sign(d) * Math.min(Math.abs(d), rate); };
 function petSpot(F){ const T = F.trick, D = DOG; if (T.side == null) T.side = F.x < D.x ? -1 : 1; return { x: D.x + T.side * FH * .5, g: D.g }; }
 function endTrick(F){ if (!F.trick) return; if (F.trick.kind === 'pet' && F.pet) F.pet = null; F.trick = null; F.hop = 0; F.vs = 0; F.sp = 0; }
-function startTrick(kind){
-  const F = fig(S.me); if (!F || F.drag || F.leave) return;
+function startTrick(kind, F = fig(S.me)){
+  if (!F || F.drag || F.leave || !TRICKS[kind]) return;
   endTrick(F);
   if (F.fetch) { F.fetch.who = null; F.fetch = null; }
   F.goal = null; F.goalStage = 0; F.pause = 0; F.escT = 0;
@@ -1341,9 +1341,13 @@ function onDog(x, y){
   return Math.abs(x - D.x) < FH * .45 && Math.abs(y - cy) < FH * .38;
 }
 let dogTapAt = 0;
+function dogPoop(){
+  const D = DOG; if (!D || D.mode === 'poop' || POOPS.length >= 4) return false;
+  if (D.petF) D.petF.pet = null; D.mode = 'poop'; D.t = 2.6; D.dropped = false; return true;
+}
 function tapDog(){
-  const now = performance.now(), D = DOG;
-  if (now - dogTapAt < 450) { dogTapAt = 0; if (D.mode !== 'poop' && POOPS.length < 4) { if (D.petF) D.petF.pet = null; D.mode = 'poop'; D.t = 2.6; D.dropped = false; } }
+  const now = performance.now();
+  if (now - dogTapAt < 450) { dogTapAt = 0; if (dogPoop()) rtSend({ t: 'poop' }); }
   else dogTapAt = now;
 }
 /* Info Zeichen getroffen? Grosszügig um die Form herum, damit es auch mit dem Finger klappt */
@@ -1429,7 +1433,7 @@ $('nameForm').addEventListener('submit', e => {
   if (busy) return; busy = true; say('One moment …');
   const f0 = sel;
   api('join', { fig: f0, name: n }).then(d => {
-    ID = { fig: d.fig, token: d.token, pin: d.pin }; saveId();
+    ID = { fig: d.fig, token: d.token, pin: d.pin }; saveId(); (RT.busy || Promise.resolve()).then(rtStart).then(() => rtSend({ t: 'join' }));
     S.claims[d.fig] = d.name; S.me = d.fig; sel = d.fig; $('nameIn').blur(); syncFigs(); updateMyCode();
     /* den Code einmal gross zeigen */
     $('nameForm').hidden = true; $('pinTxt').textContent = d.pin; $('pinBox').hidden = false; $('nameStage').classList.add('pin');
@@ -1442,7 +1446,7 @@ $('nameForm').addEventListener('submit', e => {
 $('nameBack').addEventListener('click', back);
 /* Aktionstasten: schwarz solange die Figur spielt, der Balken läuft dabei leer */
 const ACTS = [...document.querySelectorAll('#acts button')];
-for (const b of ACTS) b.addEventListener('click', () => { if (view === 'lobby' && isOpen()) startTrick(b.dataset.k); });
+for (const b of ACTS) b.addEventListener('click', () => { if (view === 'lobby' && isOpen()) { startTrick(b.dataset.k); rtSend({ t: 'trick', k: b.dataset.k }); } });
 function showActs(){
   const F = S.me != null ? fig(S.me) : null, T = F && F.trick;
   for (const b of ACTS) { const on = !!T && T.kind === b.dataset.k, p = on ? T.p : 0;
@@ -1457,7 +1461,7 @@ $('codeForm').addEventListener('submit', e => {
   if (busy || sel == null) return; busy = true; say('One moment …');
   const f0 = sel;
   api('recover', { fig: f0, pin }).then(d => {
-    ID = { fig: d.fig, token: d.token, pin }; saveId(); S.me = d.fig; updateMyCode();
+    ID = { fig: d.fig, token: d.token, pin }; saveId(); S.me = d.fig; updateMyCode(); rtStart();
     $('codeIn').blur(); sel = null; setView('lobby'); startFly('out', [{ F: fig(S.me), wave: true }], $('codeC'));
   }).catch(err => { say(err.message || NET, true); }).finally(() => { busy = false; });
 });
@@ -1515,6 +1519,52 @@ function loop(t){
   requestAnimationFrame(loop);
 }
 let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (innerWidth >= 50 && innerHeight >= 50) build(); measureFoot(); }, 200); });
+/* ---------- Echtzeit über Ably: was eine Person macht, sehen alle anderen sofort ----------
+   Empfangen per Server Sent Events, senden per REST. Der Schlüssel bleibt auf dem Server, hier gibt es nur kurzlebige Tokens. */
+const RT_HOST = 'https://main.realtime.ably.net';
+const RT = { on: true, es: null, tok: null, ch: null, me: null, last: null, wait: 2000, rn: 0, busy: null, seen: {} };
+function rtStart(){
+  if (!RT.on) return Promise.resolve();
+  if (RT.busy) return RT.busy;
+  RT.busy = (async () => {
+    try {
+      const d = await api('rt', ID ? { fig: ID.fig, token: ID.token } : {});
+      if (!d || typeof d.token !== 'string' || typeof d.channel !== 'string') throw new Error('rt');
+      RT.tok = d.token; RT.ch = d.channel; RT.me = d.clientId;
+      if (RT.es) RT.es.close();
+      const es = new EventSource(`${RT_HOST}/sse?v=1.2&channels=${encodeURIComponent(d.channel)}&accessToken=${encodeURIComponent(d.token)}` + (RT.last ? '&lastEvent=' + encodeURIComponent(RT.last) : ''));
+      RT.es = es;
+      es.onopen = () => { RT.wait = 2000; };
+      es.onmessage = e => { if (e.lastEventId) RT.last = e.lastEventId; try { onRt(JSON.parse(e.data)); } catch (err) {} };
+      /* abgelaufen oder Verbindung weg: sauber neu verbinden, mit wachsender Pause */
+      es.onerror = () => { if (RT.es !== es) return; es.close(); RT.es = null; clearTimeout(RT.rn); RT.rn = setTimeout(rtStart, RT.wait); RT.wait = Math.min(RT.wait * 2, 60000); };
+      clearTimeout(RT.rn); RT.rn = setTimeout(rtStart, Math.max(60000, (d.expires || Date.now() + 3600000) - Date.now() - 300000));
+    } catch (e) {
+      if (e.status === 503 || e.status === 404) { RT.on = false; return; }
+      clearTimeout(RT.rn); RT.rn = setTimeout(rtStart, RT.wait); RT.wait = Math.min(RT.wait * 2, 60000);
+    } finally { RT.busy = null; }
+  })();
+  return RT.busy;
+}
+function rtSend(data){
+  if (!RT.tok || !RT.ch) return;
+  fetch(`${RT_HOST}/channels/${encodeURIComponent(RT.ch)}/messages`, { method: 'POST', cache: 'no-store',
+    headers: { 'content-type': 'application/json', authorization: 'Bearer ' + btoa(RT.tok) },
+    body: JSON.stringify({ name: 'e', data: JSON.stringify(data) }) }).catch(() => {});
+}
+function onRt(m){
+  if (!m || typeof m !== 'object' || m.clientId === RT.me) return;
+  let d = m.data; if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { return; } }
+  if (!d || typeof d !== 'object') return;
+  /* nur angemeldete Figuren dürfen ihre eigene Figur bewegen; alles andere wird ignoriert */
+  const from = typeof m.clientId === 'string' && /^f\d{1,2}$/.test(m.clientId) ? +m.clientId.slice(1) : null;
+  const now = performance.now(), key = d.t + (from ?? 'v');
+  if (now - (RT.seen[key] || 0) < (d.t === 'poop' ? 2500 : 400)) return; RT.seen[key] = now;
+  if (d.t === 'trick' && from != null && from !== S.me && typeof d.k === 'string' && Object.hasOwn(TRICKS, d.k) && S.claims[from] != null) { const F = fig(from); if (F) startTrick(d.k, F); }
+  else if (d.t === 'poop') dogPoop();
+  else if (d.t === 'join' && from != null && (view === 'pick' || view === 'lobby') && !busy) refresh().then(syncFigs).catch(() => {});
+}
+
 /* Start: Schrift laden, Stand vom Server holen; danach alle paar Sekunden nachfragen, solange die Seite sichtbar ist */
 const firstLoad = () => refresh().catch(() => new Promise(r => setTimeout(r, 2500)).then(firstLoad));
 say('One moment …');
@@ -1523,7 +1573,8 @@ Promise.all([document.fonts ? document.fonts.load('700 100px Jost').catch(() => 
   /* manche eingebetteten Browser melden beim Start kurz keine Grösse: dann auf die erste echte Grösse warten */
   const go = () => { if (innerWidth < 50 || innerHeight < 50) { setTimeout(go, 200); return; } build(); setView(S.me != null ? 'lobby' : 'pick'); requestAnimationFrame(loop); };
   go();
+  rtStart();
   setInterval(() => { if (document.visibilityState === 'visible' && (view === 'pick' || view === 'lobby') && !busy) refresh().then(syncFigs).catch(() => {}); }, 12000);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refresh().then(syncFigs).catch(() => {}); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { refresh().then(syncFigs).catch(() => {}); if (RT.on && (!RT.es || RT.es.readyState === 2)) rtStart(); } });
 });
 }

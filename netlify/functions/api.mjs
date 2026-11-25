@@ -7,6 +7,7 @@ const live = host => ['bdsb.info', 'www.bdsb.info', 'wichteln-2026-4qxk.netlify.
 const handler = makeHandler({
   getStore: host => getStore({ name: live(host) ? 'wichteln26' : 'wichteln26-test', consistency: 'strong' }),
   env: k => Netlify.env.get(k),
+  rtChannel: host => live(host) ? 'wichteln26' : 'wichteln26-test',
 });
 
 export default handler;

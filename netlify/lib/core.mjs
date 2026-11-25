@@ -82,7 +82,7 @@ async function auth(store, body){
   return { fig, rec };
 }
 
-export function makeHandler({ getStore, env = () => undefined, now = () => Date.now() }){
+export function makeHandler({ getStore, env = () => undefined, now = () => Date.now(), rtChannel = () => 'wichteln26-test' }){
   return async (req) => {
     const url = new URL(req.url);
     const route = url.pathname.replace(/^.*\/api\//, '');
@@ -136,6 +136,22 @@ export function makeHandler({ getStore, env = () => undefined, now = () => Date.
         const w = await store.setJSON('fig/' + fig, { ...e.data, tokens, tokenHash: undefined }, { onlyIfMatch: e.etag });
         if (!w.modified) return fail('Please try again in a moment.', 409);
         return json({ fig, name: e.data.name, token });
+      }
+
+      /* Echtzeit: kurzlebiger Ably Token, nur für den einen Kanal. Angemeldete senden als ihre Figur */
+      if (route === 'rt') {
+        const key = env('ABLY_API_KEY');
+        if (typeof key !== 'string' || !/^[\w-]+\.[\w-]+:[\w\-+/=]+$/.test(key.trim())) return fail('Not available.', 503);
+        const k = key.trim(), keyName = k.split(':')[0];
+        const a = body.fig != null ? await auth(store, body) : null;
+        const clientId = a ? 'f' + a.fig : 'v' + randomBytes(6).toString('hex');
+        const ch = rtChannel(url.hostname);
+        const tr = { keyName, ttl: 3600000, capability: JSON.stringify({ [ch]: ['publish', 'subscribe'] }), clientId, timestamp: Date.now(), nonce: randomBytes(12).toString('hex') };
+        const r = await fetch(`https://main.realtime.ably.net/keys/${encodeURIComponent(keyName)}/requestToken`, {
+          method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Basic ' + Buffer.from(k).toString('base64') }, body: JSON.stringify(tr) });
+        if (!r.ok) { console.error('ably token', r.status, (await r.text()).slice(0, 300)); return fail('Not available.', 503); }
+        const d = await r.json();
+        return json({ token: d.token, expires: d.expires, channel: ch, clientId });
       }
 
       if (route.startsWith('admin/')) {
