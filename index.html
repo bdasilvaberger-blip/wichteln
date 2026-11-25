@@ -220,7 +220,9 @@ const mobile = () => innerWidth < 640, desk = () => innerWidth >= 1024;
 /* ---------- Buchstaben: extrudierte Strichzeichnung, keine Grautöne ---------- */
 function buildLetters(){
   const L = letters;
-  const rows = mobile() ? ['WICH', 'TELN', '2026'] : ['WICHTELN', '2026'];
+  /* das i steht als Info Zeichen gleich nach 2026 */
+  const rows = mobile() ? ['WICH', 'TELN', '2026i'] : ['WICHTELN', '2026i'];
+  const wt = ch => ch === 'i' ? .5 : 1;
   const font = fs => `700 ${fs}px Jost, Futura, "Century Gothic", sans-serif`;
   const heights = [1.15, .6, 1.3, .8, 1.4, .65, 1.05, .55, 1.25, .75, 1.35, .7];
   /* Buchstaben verteilt über den Platz, leicht gedreht, mit Platz zum Durchgehen */
@@ -229,15 +231,21 @@ function buildLetters(){
   const y0 = top() + FH * 1.1, y1 = bottom() - FH * .5;
   const rowSp = (y1 - y0) / rows.length;
   L.G = [];
-  const maxN = Math.max(...rows.map(r => r.length));
-  const fs = Math.floor(Math.min((x1 - x0) / maxN * (mobile() ? .66 : desk() ? .84 : .72), rowSp / C * .5, FH * 3) * (L.shrink || 1));
+  const maxN = Math.max(...rows.map(r => r.replace('i', '').length));
+  const fs = Math.floor(Math.min((x1 - x0) / maxN * (mobile() ? .66 : desk() ? .76 : .68), rowSp / C * .5, FH * 3) * (L.shrink || 1));
   rows.forEach((row, ri) => {
-    const n = row.length, slot = (x1 - x0) / n;
-    [...row].forEach((ch, ci) => {
-      const x = x0 + slot * (ci + .5) + (rnd() - .5) * slot * .22;
-      const gy = y0 + rowSp * (ri + .55) + (rnd() - .5) * rowSp * .22;
-      const H = Math.round(Math.min(FH * 1.75, fs * .95 * heights[L.G.length % heights.length]));
-      L.G.push({ ch, x, gy, rot: (rnd() - .5) * .38, H, E: H * HZ });
+    /* Plätze nach Breite verteilt; jeder Buchstabe etwas höher oder tiefer, die Zeile bleibt lesbar */
+    /* das i braucht keinen eigenen Platz: es steht direkt rechts neben der 6 */
+    const hasI = row.includes('i'), rx1 = hasI ? x1 - fs * .45 : x1, letters_ = row.replace('i', '');
+    const unit = (rx1 - x0) / letters_.length; let acc = 0, lastX = 0;
+    [...row].forEach(ch => {
+      let x;
+      if (ch === 'i') x = lastX + fs * .5;
+      else { x = x0 + acc + unit / 2 + (rnd() - .5) * unit * .16; acc += unit; lastX = x; }
+      const gy = y0 + rowSp * (ri + .55) + (rnd() - .5) * rowSp * .42;
+      const info = ch === 'i';
+      const H = info ? Math.round(Math.min(FH * .6, fs * .35)) : Math.round(Math.min(FH * 1.75, fs * .95 * heights[L.G.length % heights.length]));
+      L.G.push({ ch, x, gy, rot: info ? 0 : (rnd() - .5) * .38, H, E: H * HZ, info });
     });
   });
   /* Trefferkarte: 0 frei, 255 gesperrt (Nischen), sonst Buchstabe */
@@ -248,12 +256,12 @@ function buildLetters(){
   L.G.forEach((g, i) => { ix.save(); ix.translate(g.x, g.gy); ix.scale(1, C); ix.rotate(g.rot); ix.fillStyle = `rgb(${i + 1},0,0)`; ix.fill(glyphPath(g.ch, fs)); ix.restore(); });
   const data = ix.getImageData(0, 0, W, Hh).data;
   L.idW = W; L.idH = Hh; L.ids = new Uint8Array(W * Hh);
-  const NG = L.G.length;
+  const NG = L.G.length, infoId = L.G.findIndex(g => g.info) + 1;
   /* Abstand zwischen den Buchstaben prüfen */
   { const gap = Math.round(FH * .6); outer: for (let y = 0; y < Hh; y += 2) for (let x = 0; x < W; x += 2) { const v = data[(y * W + x) * 4 + 3] === 255 ? data[(y * W + x) * 4] : 0; if (!v || v > NG) continue;
       for (const [dx, dy] of [[gap, 0], [-gap, 0], [0, Math.round(gap * C)], [0, -Math.round(gap * C)], [gap * .7, gap * .7 * C], [-gap * .7, gap * .7 * C]]) {
         const X = Math.round(x + dx), Y = Math.round(y + dy); if (X < 0 || Y < 0 || X >= W || Y >= Hh) continue;
-        const o = data[(Y * W + X) * 4 + 3] === 255 ? data[(Y * W + X) * 4] : 0; if (o && o <= NG && o !== v) { L.tooClose = true; break outer; } } } }
+        const o = data[(Y * W + X) * 4 + 3] === 255 ? data[(Y * W + X) * 4] : 0; if (o && o <= NG && o !== v && o !== infoId && v !== infoId) { L.tooClose = true; break outer; } } } }
   for (let p = 0, q = 0; p < L.ids.length; p++, q += 4) { const v = data[q + 3] === 255 ? data[q] : 0; L.ids[p] = v > NG ? 0 : v; }
   /* Innenräume (O, 0, 6) sind von aussen nicht erreichbar: sperren */
   {
@@ -271,23 +279,7 @@ function buildLetters(){
       for (const q of comp) L.ids[q] = fill;
     }
   }
-  /* Info Zeichen: ein pinkes i, gebaut wie die anderen Buchstaben, an einem freien Platz */
-  {
-    const gw = GLYPHS.i.w * fs / 100, gh = GLYPHS.i.h * fs / 100, m = FH * .7;
-    const fits = (cx, cy) => { for (let y = cy - (gh / 2 + m) * C; y <= cy + (gh / 2 + m) * C; y += 2) for (let x = cx - gw / 2 - m; x <= cx + gw / 2 + m; x += 2) { const X = Math.round(x), Y = Math.round(y); if (X < 0 || Y < 0 || X >= W || Y >= Hh || L.ids[Y * W + X] !== 0) return false; } return true; };
-    const cand = []; for (let fy = .95; fy >= .4; fy -= .05) for (const fx of [.93, .07, .82, .18, .5, .7, .3]) cand.push([W * fx, top() + FH * 1.1 + (bottom() - top() - FH * 1.6) * fy]);
-    const at = cand.find(([x, y]) => fits(x, y));
-    if (at) {
-      const H = Math.round(Math.min(FH * .6, fs * .35)), id = L.G.length + 1;
-      L.G.push({ ch: 'i', x: at[0], gy: at[1], rot: 0, H, E: H * HZ, info: true });
-      const ic = document.createElement('canvas'); ic.width = W; ic.height = Hh; const ix2 = ic.getContext('2d', { willReadFrequently: true });
-      ix2.translate(at[0], at[1]); ix2.scale(1, C); ix2.fillStyle = '#f00'; ix2.fill(glyphPath('i', fs));
-      const x0 = Math.max(0, Math.floor(at[0] - gw)), x1 = Math.min(W, Math.ceil(at[0] + gw)), y0 = Math.max(0, Math.floor(at[1] - gh * C)), y1 = Math.min(Hh, Math.ceil(at[1] + gh * C));
-      const dd = ix2.getImageData(x0, y0, x1 - x0, y1 - y0).data;
-      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (dd[((y - y0) * (x1 - x0) + x - x0) * 4 + 3] === 255) L.ids[y * W + x] = id;
-      L.info = { x: at[0], gy: at[1], gw, gh, H };
-    } else L.info = null;
-  }
+  { const g = L.G.find(q => q.info); L.info = g ? { x: g.x, gy: g.gy, gw: GLYPHS.i.w * fs / 100, gh: GLYPHS.i.h * fs / 100, H: g.H } : null; }
   /* Nischen sperren: morphologisches Schliessen je Buchstabe, nur was dazukommt */
   const r = Math.round(FH * .3);
   L.G.forEach((g, i) => {
@@ -369,8 +361,10 @@ function initGL(){
     uniforms: { tN: { value: null }, tD: { value: null }, tI: { value: null }, uRes: { value: new THREE.Vector2() }, uR: { value: 2 }, uDT: { value: .0004 }, uPink: { value: new THREE.Color(PINK) } },
     vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
     fragmentShader: `uniform sampler2D tN; uniform sampler2D tD; uniform sampler2D tI; uniform vec2 uRes; uniform float uR; uniform float uDT; uniform vec3 uPink; varying vec2 vUv;
+      float pinkE = 0.0;
       float edgeAt(vec2 o, vec4 c0, float d0){
         vec4 a = texture2D(tN, vUv + o), b = texture2D(tN, vUv - o);
+        pinkE = max(pinkE, max(step(abs(a.w * 255.0 - 4.0), .5), step(abs(b.w * 255.0 - 4.0), .5)));
         float da = texture2D(tD, vUv + o).x, db = texture2D(tD, vUv - o).x;
         vec3 n0 = c0.xyz * 2.0 - 1.0;
         float e = 0.0;
@@ -390,10 +384,11 @@ function initGL(){
         e = max(e, edgeAt(vec2(uR, -uR) * .707 * px, c0, d0));
         /* Konturen kommen aus dem Bild ohne Figuren: keine Lücken, wo eine Figur davorsteht */
         float id = floor(texture2D(tI, vUv).w * 255.0 + .5);
-        vec3 col = mix(vec3(1.0), vec3(0.0), e);
+        pinkE = max(pinkE, step(abs(c0.w * 255.0 - 4.0), .5));
+        vec3 col = mix(vec3(1.0), pinkE > .5 ? uPink : vec3(0.0), e);
         if (id > .5 && id < 1.5) col = vec3(0.0);
         if (id > 1.5 && id < 2.5) col = uPink;
-        if (id > 3.5 && id < 4.5) col = mix(uPink, vec3(0.0), e);
+
         gl_FragColor = vec4(col, 1.0);
       }`
   });
@@ -835,7 +830,9 @@ function dogStep(dt){
   }
   D.sp = lerp(D.sp, want, Math.min(1, dt * 4));
   const nx = D.x + Math.cos(D.a) * D.sp * FH * dt, ng = D.g + Math.sin(D.a) * D.sp * FH * dt * C;
-  if (D.sp > .01 && clearAt(-1, nx, ng, .15)) { D.x = nx; D.g = ng; }
+  /* nie in eine Figur hineinlaufen */
+  const tooNear = Fs.some(F => F.surf < 0 && !F.drag && Math.hypot(F.x - nx, (F.g - ng) / C) < FH * .32 && Math.hypot(F.x - nx, (F.g - ng) / C) < Math.hypot(F.x - D.x, (F.g - D.g) / C));
+  if (D.sp > .01 && !tooNear && clearAt(-1, nx, ng, .15)) { D.x = nx; D.g = ng; } else if (tooNear) D.a += 2.5 * dt;
   D.sniff = lerp(D.sniff, D.mode === 'sniff' ? 1 : D.mode === 'walk' ? .25 : 0, Math.min(1, dt * 4));
   D.squat = lerp(D.squat, D.mode === 'poop' && D.t > .5 ? 1 : 0, Math.min(1, dt * 5));
   if (D.mode === 'poop' && D.t < 1.2 && !D.dropped) { D.dropped = true; D.lastPoop = clock;
