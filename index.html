@@ -236,11 +236,11 @@ function buildLetters(){
   rows.forEach((row, ri) => {
     /* Plätze nach Breite verteilt; jeder Buchstabe etwas höher oder tiefer, die Zeile bleibt lesbar */
     /* das i braucht keinen eigenen Platz: es steht direkt rechts neben der 6 */
-    const hasI = row.includes('i'), rx1 = hasI ? x1 - fs * .45 : x1, letters_ = row.replace('i', '');
+    const hasI = row.includes('i'), rx1 = hasI ? x1 - fs * .8 : x1, letters_ = row.replace('i', '');
     const unit = (rx1 - x0) / letters_.length; let acc = 0, lastX = 0;
     [...row].forEach(ch => {
       let x;
-      if (ch === 'i') x = lastX + fs * .5;
+      if (ch === 'i') x = lastX + fs * .85;
       else { x = x0 + acc + unit / 2 + (rnd() - .5) * unit * .16; acc += unit; lastX = x; }
       const gy = y0 + rowSp * (ri + .55) + (rnd() - .5) * rowSp * .42;
       const info = ch === 'i';
