@@ -4,7 +4,7 @@ const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const PINK = '#ff4fa8', INK = '#000';
 const N = 24, FREE = 6;
 /* Anmeldung offen bis 1. Dezember, 12 Uhr (Zürich). Zum Testen: ?phase=los oder ?phase=offen */
-let DEADLINE = new Date('2026-12-01T12:00:00+01:00').getTime(), SKEW = 0;
+let DEADLINE = new Date('2026-12-01T12:00:00+01:00').getTime(), SKEW = 0, SKEWN = 0, SKEWRT = 1e9;
 const srvNow = () => Date.now() + SKEW;
 const isOpen = () => srvNow() < DEADLINE;
 
@@ -22,8 +22,11 @@ async function api(path, body){
 }
 const NET = 'No connection. Please try again in a moment.';
 async function refresh(){
-  const d = await api('state');
-  SKEW = d.now - Date.now(); DEADLINE = d.deadline;
+  const t0 = Date.now(), d = await api('state'), t1 = Date.now();
+  /* Serverzeit mit halber Laufzeit: so laufen die Aktionen auf allen Geräten im selben Takt */
+  const sk = d.now - (t0 + t1) / 2;
+  if (!SKEWN || t1 - t0 < SKEWRT) { SKEW = sk; SKEWRT = t1 - t0; } else SKEW += (sk - SKEW) * .2;
+  SKEWN++; DEADLINE = d.deadline;
   const c = {}; for (const k in d.claims) c[Number(k)] = d.claims[k];
   S.claims = c;
   if (ID && S.me == null) {
@@ -574,7 +577,7 @@ function actPose(F, dt){
     F.ph += dt * 9;
     if (A.turn < 1) return walkPose(F, { stride: .05 });
   }
-  A.t = Math.min(1, A.t + dt / (RM ? .01 : A.dur));
+  A.t = Math.min(1, A.t + dt * (A.fast || 1) / (RM ? .01 : A.dur));
   const k = down ? 1 - A.t : A.t;
   const K = A.keys, sp = get => spline(K, k, get);
   F.a = Math.atan2(n.v * sgn, n.x * sgn);
@@ -710,11 +713,13 @@ function dogStep(dt){
   const free = a2 => { for (const L of [.15, .3, .45]) if (!clearAt(-1, D.x + Math.cos(a2) * L * FH, D.g + Math.sin(a2) * L * FH * C, .22)) return false; return true; };
   let want = 0;
   const out = D.x < FH || D.x > W - FH || D.g < top() || D.g > fbot();
-  if (D.mode === 'walk' || D.mode === 'visit' || (D.mode === 'stay' && out)) {
-    want = D.mode === 'visit' ? .65 : .5;
+  /* Mellow läuft der Figur entgegen, damit sich beide rechtzeitig treffen */
+  const pd = D.mode === 'stay' && D.petF ? Math.hypot(D.petF.x - D.x, (D.petF.g - D.g) / C) / FH : 0, far = pd > .9;
+  if (D.mode === 'walk' || D.mode === 'visit' || (D.mode === 'stay' && (out || far))) {
+    want = D.mode === 'visit' ? .65 : D.mode === 'stay' ? (out ? 1 : cl((pd - .5) / 2 / Math.max(.3, PET_RUN - (D.petF.trick ? D.petF.trick.t : 0)) * 1.25, .4, 6)) : .5;
     /* beim Besuch seitlich neben die Figur, damit man das Streicheln sieht */
     const vx = D.mode === 'visit' ? D.vF.x + D.vS * FH * .5 : 0, vg = D.mode === 'visit' ? D.vF.g : 0, vd = D.mode === 'visit' ? Math.hypot(vx - D.x, (vg - D.g) / C) : 0;
-    let desired = D.mode === 'stay' ? Math.atan2((Hh / 2 - D.g) / C, W / 2 - D.x) : D.mode === 'visit' ? (vd < FH * .12 ? Math.atan2(0, -D.vS) : Math.atan2((vg - D.g) / C, vx - D.x)) : D.a + (Math.sin(clock * .7 + 1) * 1.2 + Math.sin(clock * 1.9) * .6) * dt;
+    let desired = D.mode === 'stay' ? (out ? Math.atan2((Hh / 2 - D.g) / C, W / 2 - D.x) : Math.atan2((D.petF.g - D.g) / C, D.petF.x - D.x)) : D.mode === 'visit' ? (vd < FH * .12 ? Math.atan2(0, -D.vS) : Math.atan2((vg - D.g) / C, vx - D.x)) : D.a + (Math.sin(clock * .7 + 1) * 1.2 + Math.sin(clock * 1.9) * .6) * dt;
     if (D.mode === 'visit') want = cl(vd / (FH * .4)) * .65;
     if (D.x < FH || D.x > W - FH || D.g < top() || D.g > fbot()) desired = Math.atan2((Hh / 2 - D.g) / C, W / 2 - D.x);
     for (const F of Fs) { if (F.surf >= 0 || F.drag || F === D.vF) continue; const dx = F.x - D.x, dg = (F.g - D.g) / C, d = Math.hypot(dx, dg);
@@ -722,7 +727,7 @@ function dogStep(dt){
     let pick = null; for (const da of [0, .4, -.4, .8, -.8, 1.3, -1.3, 2, -2, Math.PI]) if (free(desired + da)) { pick = desired + da; break; }
     if (pick === null) { want = 0; D.a += 2 * dt; } else { let d = pick - D.a; d = Math.atan2(Math.sin(d), Math.cos(d)); D.a += Math.sign(d) * Math.min(Math.abs(d), 3 * dt); if (Math.abs(d) > 1) want *= .3; }
   }
-  D.sp = lerp(D.sp, want, Math.min(1, dt * 4));
+  D.sp = lerp(D.sp, want, Math.min(1, dt * (D.mode === 'stay' ? 9 : 4)));
   const nx = D.x + Math.cos(D.a) * D.sp * FH * dt, ng = D.g + Math.sin(D.a) * D.sp * FH * dt * C;
   /* nie in eine Figur hineinlaufen */
   const tooNear = Fs.some(F => F.surf < 0 && !F.drag && Math.hypot(F.x - nx, (F.g - ng) / C) < FH * (F === D.vF ? .42 : .32) && Math.hypot(F.x - nx, (F.g - ng) / C) < Math.hypot(F.x - D.x, (F.g - D.g) / C));
@@ -778,40 +783,66 @@ function assignPoops(){
   }
 }
 /* ---------- Spielen mit der eigenen Figur ---------- */
-const TRICKS = { twerk: 4.4, roll: 3.8, jump: 6 * .62 + .4, pet: 6 };
+const PET_RUN = 3.2, LEAD = .7;
+const TRICKS = { twerk: 4.4, roll: 3.8, jump: 6 * .62 + .4, pet: PET_RUN + 3.6 };
 const turnTo = (F, a, rate) => { let d = a - F.a; d = Math.atan2(Math.sin(d), Math.cos(d)); F.a += Math.sign(d) * Math.min(Math.abs(d), rate); };
 function petSpot(F){ const T = F.trick, D = DOG; if (T.side == null) T.side = F.x < D.x ? -1 : 1; return { x: D.x + T.side * FH * .5, g: D.g }; }
-function endTrick(F){ if (!F.trick) return; if (F.trick.kind === 'pet' && F.pet) F.pet = null; F.trick = null; F.hop = 0; F.vs = 0; F.sp = 0; }
-function startTrick(kind, F = fig(S.me)){
-  if (!F || F.drag || F.leave || !TRICKS[kind]) return;
+function endTrick(F){ if (!F.trick) return; if (F.pet && F.pet.T === F.trick) F.pet = null; F.trick = null; F.hop = 0; F.vs = 0; F.sp = 0; }
+/* Jede Aktion hat einen festen Startzeitpunkt in Serverzeit: so passiert sie auf allen Geräten gleichzeitig */
+function startTrick(kind, F = fig(S.me), at = srvNow() + LEAD * 1000){
+  if (!F || F.drag || F.leave || !Object.hasOwn(TRICKS, kind)) return false;
+  if ((srvNow() - at) / 1000 > TRICKS[kind] - .3) return false;
+  if (kind === 'pet' && !DOG) return false;
   endTrick(F);
   if (F.fetch) { F.fetch.who = null; F.fetch = null; }
-  F.goal = null; F.goalStage = 0; F.pause = 0; F.escT = 0;
-  /* laufende Haltungen sanft beenden, dann geht es los */
-  if (F.lean) F.lean.dur = Math.min(F.lean.dur, F.lean.t + .6);
-  if (F.sit) F.sit.dur = Math.min(F.sit.dur, F.sit.t + .7);
-  if (F.pet) F.pet.dur = Math.min(F.pet.dur, F.pet.t + .5);
-  F.trick = { kind, t: 0, dur: TRICKS[kind], wait: true, waitT: 0, p: 1 };
-  if (kind === 'pet') { if (!DOG) { F.trick = null; return; } DOG.mode = 'stay'; DOG.t = 30; DOG.petF = F; }
+  F.goal = null; F.goalStage = 0; F.escT = 0;
+  /* was gerade läuft, rasch zu Ende bringen */
+  if (F.lean) F.lean.dur = Math.min(F.lean.dur, F.lean.t + .5);
+  if (F.sit) F.sit.dur = Math.min(F.sit.dur, F.sit.t + .6);
+  if (F.pet) F.pet.dur = Math.min(F.pet.dur, F.pet.t + .4);
+  if (F.pickUp) F.pickUp.fast = 3;
+  if (F.act) F.act.fast = 3;
+  F.trick = { kind, at, t: (srvNow() - at) / 1000, dur: TRICKS[kind], wait: true, p: 1 };
+  if (kind === 'pet') { const D = DOG; if (D.petF && D.petF !== F && D.petF.trick) endTrick(D.petF); if (D.petF && D.petF.pet) D.petF.pet = null; D.mode = 'stay'; D.t = 30; D.petF = F; }
+  return true;
+}
+/* vom Buchstaben auf den Boden daneben springen */
+function dropDown(F){
+  const h = hOf(F.surf); let best = null;
+  for (let r = .35; r <= 3 && !best; r += .15) for (let k = 0; k < 24 && !best; k++) {
+    const a = k / 24 * Math.PI * 2, x = F.x + Math.cos(a) * r * FH, g = F.g + Math.sin(a) * r * FH * C;
+    if (clearAt(-1, x, g, .25) && x > FH * .4 && x < W - FH * .4 && g > top() && g < fbot()) best = { x, g };
+  }
+  if (!best) return false;
+  F.x = best.x; F.g = best.g; F.surf = -1; F.z0 = 0; F.dropZ = (F.dropZ || 0) + h / FH; F.dropV = 0;
+  F.spot = null; F.topGoal = null; F.topPath = null; F.sit = null; F.lean = null; F.topT = 0; F.sitDone = false;
+  return true;
 }
 function trickTick(F, dt){
   const T = F.trick;
+  T.t = (srvNow() - T.at) / 1000;
   if (T.wait) {
-    T.waitT += dt;
-    if (F.surf >= 0 && !F.act && T.kind === 'pet') { F.topWait = 0; F.sit = null; F.sitDone = true; }
-    if (!F.act && !F.lean && !F.sit && !F.pickUp && !F.pet && !F.flyHide && (T.kind !== 'pet' || F.surf < 0)) T.wait = false;
-    else if (T.waitT > 10) { endTrick(F); return; }
-    if (T.wait) return;
-    if (T.kind === 'pet') { const p = petSpot(F); T.dur = Math.hypot(p.x - F.x, (p.g - F.g) / C) / (F.want * 2.1 * FH) + 4.2; }
-    if (T.kind === 'roll') {
-      /* in die offenste Richtung rollen */
-      let best = F.a, bn = -1;
-      for (let k = 0; k < 16; k++) { const a2 = k * Math.PI / 8; let n = 0; for (let L = .25; L <= 2.6; L += .25) { const x = F.x + Math.cos(a2) * L * FH, g = F.g + Math.sin(a2) * L * FH * C; if (clearAt(F.surf, x, g, .2) && x > FH * .4 && x < W - FH * .4 && g > top() && g < fbot()) n++; else break; } if (n > bn + .5 * Math.abs(Math.sin(a2))) { bn = n; best = a2; } }
-      T.a = best; T.room = bn * .25 * FH;
+    F.pause = Math.max(F.pause || 0, .1);
+    if (F.act) F.act.fast = 3;
+    if (T.kind === 'pet' && F.surf >= 0 && !F.act) dropDown(F);
+    if (T.t >= 0 && !F.act && !F.lean && !F.sit && !F.pickUp && !F.pet && !F.flyHide && (T.kind !== 'pet' || F.surf < 0)) {
+      T.wait = false; F.pause = 0;
+      if (T.kind === 'roll') {
+        /* in die offenste Richtung rollen */
+        let best = F.a, bn = -1;
+        for (let k = 0; k < 16; k++) { const a2 = k * Math.PI / 8; let n = 0; for (let L = .25; L <= 2.6; L += .25) { const x = F.x + Math.cos(a2) * L * FH, g = F.g + Math.sin(a2) * L * FH * C; if (clearAt(F.surf, x, g, .2) && x > FH * .4 && x < W - FH * .4 && g > top() && g < fbot()) n++; else break; } if (n > bn + .5 * Math.abs(Math.sin(a2))) { bn = n; best = a2; } }
+        T.a = best; T.room = bn * .25 * FH;
+      }
     }
   }
-  T.t += dt; T.p = Math.min(T.p, T.t0 != null ? T.p0 * cl(1 - (T.t - T.t0) / (T.dur - T.t0)) : cl(1 - T.t / T.dur));
-  if (T.kind === 'pet' ? (T.petting && !F.pet) || T.t > T.dur + 2 : T.t >= T.dur) endTrick(F);
+  T.p = cl(1 - Math.max(0, T.t) / T.dur);
+  if (T.kind === 'pet' && !T.wait && !T.petting && T.t >= PET_RUN && DOG) {
+    /* jetzt streicheln, überall gleichzeitig; ist Mellow noch zu weit weg, springt er schnell hin */
+    const D = DOG, p = petSpot(F);
+    if (Math.hypot(p.x - F.x, (p.g - F.g) / C) > FH * .3) { const nx = F.x - T.side * FH * .5; if (clearAt(-1, nx, F.g, .15)) { D.x = nx; D.g = F.g; } else { T.side = -T.side; D.x = F.x - T.side * FH * .5; D.g = F.g; } }
+    F.pet = { t: 0, dur: 3.4, T }; T.petting = true; F.sp = 0; F.vs = 0; D.mode = 'pet'; D.t = 3.6; D.petF = F;
+  }
+  if (T.t >= T.dur || (T.wait && T.t > T.dur)) endTrick(F);
 }
 function trickPose(F, dt){
   const T = F.trick, t = T.t, e = ez(seg(t, 0, .35)) * (1 - ez(seg(t, T.dur - .45, T.dur)));
@@ -877,7 +908,7 @@ function rollJ(J, T){
 }
 /* den Hund streicheln: zum Hund drehen, bücken, Hand auf dem Rücken hin und her */
 function petPose(F, dt){
-  const K = F.pet, D = DOG; K.t += dt;
+  const K = F.pet, D = DOG; if (K.T) K.t = K.T.t - PET_RUN; else K.t += dt;
   if (!D) { F.pet = null; return walkPose(F, { stride: 0 }); }
   const dx = D.x - F.x, dg = (D.g - F.g) / C, dist = Math.hypot(dx, dg) / FH;
   { let d = Math.atan2(dg, dx) - F.a; d = Math.atan2(Math.sin(d), Math.cos(d)); F.a += Math.sign(d) * Math.min(Math.abs(d), 5 * dt); }
@@ -891,7 +922,7 @@ function petPose(F, dt){
   return P;
 }
 function pickPose(F, dt){
-  const K = F.pickUp; K.t += dt;
+  const K = F.pickUp; K.t += dt * (K.fast || 1);
   { let d = K.a - F.a; d = Math.atan2(Math.sin(d), Math.cos(d)); F.a += Math.sign(d) * Math.min(Math.abs(d), 6 * dt); }
   const b = ez(seg(K.t, .15, .7)) * (1 - ez(seg(K.t, 1.1, 1.7)));
   /* den letzten Schritt ausklingen lassen, dann bücken */
@@ -1080,8 +1111,9 @@ function step(F, dt){
         if (F.stillT > .8) { let best = F.a, bn = -1; for (let k = 0; k < 16; k++) { const a2 = k * Math.PI / 8; let n = 0; for (const L of [.2, .4, .6, .8, 1]) { if (clear(F.x + Math.cos(a2) * L * FH, F.g + Math.sin(a2) * L * FH * C)) n++; else break; } if (n > bn) { bn = n; best = a2; } }
           F.escA = best; F.escT = 1.2; F.stillT = 0; F.goal = null; F.goalStage = 0; } }
       else F.stillT = 0;
-      const run = F.trick && F.trick.kind === 'pet' && !F.trick.wait && DOG ? petSpot(F) : null;
-      if (run) want *= 2.1;
+      const run = F.trick && F.trick.kind === 'pet' && !F.trick.wait && !F.trick.petting && DOG ? petSpot(F) : null;
+      /* so schnell wie nötig, damit das Streicheln überall im selben Moment beginnt */
+      if (run) { const d = Math.hypot(run.x - F.x, (run.g - F.g) / C) / FH; want = d < .08 ? 0 : Math.min(cl(d / Math.max(.3, PET_RUN - F.trick.t) * 1.15, .35, 9), d / Math.max(dt, 1 / 60) * .6); }
       const desired = run ? Math.atan2((run.g - F.g) / C, run.x - F.x) : F.fetch && !F.leave ? Math.atan2((F.fetch.g - F.g) / C, F.fetch.x - F.x) : F.leave ? (F.x < W / 2 ? Math.PI : 0) : F.enter > 0 ? (F.x < W / 2 ? 0 : Math.PI) : F.escT > 0 ? F.escA : F.goal ? Math.atan2((F.goal.S2.g - F.g) / C, F.goal.S2.x - F.x) : F.a + cl(turn, -4, 4) * dt;
       if (F.goal && F.escT <= 0) want *= cl(Math.hypot(F.goal.S2.x - F.x, (F.goal.S2.g - F.g) / C) / (FH * .7), .3, 1);
       let pick = null, da0 = 0;
@@ -1092,7 +1124,7 @@ function step(F, dt){
       if (pick === null) { want = 0; F.a += 2 * dt; }
       else { let d = pick - F.a; d = Math.atan2(Math.sin(d), Math.cos(d)); F.a += Math.sign(d) * Math.min(Math.abs(d), (F.goal || F.escT > 0 || da0 ? 5 : 2.2) * dt); if (Math.abs(d) > 1) want *= .35; }
     }
-    F.sp = lerp(F.sp, moving ? want : 0, Math.min(1, dt * 4));
+    F.sp = lerp(F.sp, moving ? want : 0, Math.min(1, dt * (F.trick && F.trick.kind === 'pet' ? 10 : 4)));
     const v = F.sp * FH;
     if (v > 1 && moving) {
       const ca = Math.cos(F.a), sa = Math.sin(F.a);
@@ -1111,8 +1143,6 @@ function step(F, dt){
         const px = F.x + ux * push, pg = F.g + ug * push * C; if (clear(px, pg)) { F.x = px; F.g = pg; } }
     }
     /* beim Hund angekommen: streicheln */
-    { const T = F.trick; if (T && T.kind === 'pet' && !T.wait && DOG) { const p = petSpot(F), d = Math.hypot(p.x - F.x, (p.g - F.g) / C);
-      if (d < FH * .12 || (d < FH * .3 && T.t > 2 && (F.vs || 0) < .05)) { F.pet = { t: 0, dur: 3.4 }; T.petting = true; T.dur = T.t + 3.5; T.t0 = T.t; T.p0 = T.p; DOG.mode = 'pet'; DOG.t = 3.4; DOG.petF = F; F.sp = 0; } } }
     /* beim Haufen angekommen: bücken und aufheben */
     if (F.fetch) { F.fetchT += dt; const p = F.fetch, d = Math.hypot(p.x - F.x, (p.g - F.g) / C);
       if (!POOPS.includes(p)) F.fetch = null;
@@ -1446,7 +1476,7 @@ $('nameForm').addEventListener('submit', e => {
 $('nameBack').addEventListener('click', back);
 /* Aktionstasten: schwarz solange die Figur spielt, der Balken läuft dabei leer */
 const ACTS = [...document.querySelectorAll('#acts button')];
-for (const b of ACTS) b.addEventListener('click', () => { if (view === 'lobby' && isOpen()) { startTrick(b.dataset.k); rtSend({ t: 'trick', k: b.dataset.k }); } });
+for (const b of ACTS) b.addEventListener('click', () => { if (view === 'lobby' && isOpen()) { const at = Math.round(srvNow() + LEAD * 1000); if (startTrick(b.dataset.k, fig(S.me), at)) rtSend({ t: 'trick', k: b.dataset.k, at }); } });
 function showActs(){
   const F = S.me != null ? fig(S.me) : null, T = F && F.trick;
   for (const b of ACTS) { const on = !!T && T.kind === b.dataset.k, p = on ? T.p : 0;
@@ -1560,7 +1590,7 @@ function onRt(m){
   const from = typeof m.clientId === 'string' && /^f\d{1,2}$/.test(m.clientId) ? +m.clientId.slice(1) : null;
   const now = performance.now(), key = d.t + (from ?? 'v');
   if (now - (RT.seen[key] || 0) < (d.t === 'poop' ? 2500 : 400)) return; RT.seen[key] = now;
-  if (d.t === 'trick' && from != null && from !== S.me && typeof d.k === 'string' && Object.hasOwn(TRICKS, d.k) && S.claims[from] != null) { const F = fig(from); if (F) startTrick(d.k, F); }
+  if (d.t === 'trick' && from != null && from !== S.me && typeof d.k === 'string' && Object.hasOwn(TRICKS, d.k) && S.claims[from] != null) { const F = fig(from), at = Number(d.at); if (F && Number.isFinite(at) && Math.abs(at - srvNow()) < 15000) startTrick(d.k, F, at); }
   else if (d.t === 'poop') dogPoop();
   else if (d.t === 'join' && from != null && (view === 'pick' || view === 'lobby') && !busy) refresh().then(syncFigs).catch(() => {});
 }
