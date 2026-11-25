@@ -1413,6 +1413,8 @@ function render(dt){
       const w = c.measureText(name).width + 8;
       c.fillStyle = 'rgba(255,255,255,.9)'; const lh = desk() ? 18 : 15; c.fillRect(b.head[0] - w / 2, y - lh, w, lh);
       c.fillStyle = F.i === S.me ? INK : PINK; c.fillText(name, b.head[0], y - 1);
+      /* grüner Punkt über dem Kopf: gerade online */
+      if (isOnline(F.i)) { const r0 = desk() ? 5 : 4.2; c.beginPath(); c.arc(b.head[0], y - lh - r0 - 1, r0, 0, 7); c.fillStyle = '#22C55E'; c.fill(); c.lineWidth = 1.5; c.strokeStyle = '#fff'; c.stroke(); }
     }
   }
 }
@@ -1746,7 +1748,7 @@ function rtStart(){
       if (RT.es) RT.es.close();
       const es = new EventSource(`${RT_HOST}/sse?v=1.2&channels=${encodeURIComponent(d.channel)}&accessToken=${encodeURIComponent(d.token)}` + (RT.last ? '&lastEvent=' + encodeURIComponent(RT.last) : ''));
       RT.es = es;
-      es.onopen = () => { RT.wait = 2000; };
+      es.onopen = () => { RT.wait = 2000; heartbeat(); };
       es.onmessage = e => { if (e.lastEventId) RT.last = e.lastEventId; try { onRt(JSON.parse(e.data)); } catch (err) {} };
       /* abgelaufen oder Verbindung weg: sauber neu verbinden, mit wachsender Pause */
       es.onerror = () => { if (RT.es !== es) return; es.close(); RT.es = null; clearTimeout(RT.rn); RT.rn = setTimeout(rtStart, RT.wait); RT.wait = Math.min(RT.wait * 2, 60000); };
@@ -1760,16 +1762,22 @@ function rtStart(){
 }
 function rtSend(data){
   if (!RT.tok || !RT.ch) return;
-  fetch(`${RT_HOST}/channels/${encodeURIComponent(RT.ch)}/messages`, { method: 'POST', cache: 'no-store',
+  fetch(`${RT_HOST}/channels/${encodeURIComponent(RT.ch)}/messages`, { method: 'POST', cache: 'no-store', keepalive: true,
     headers: { 'content-type': 'application/json', authorization: 'Bearer ' + btoa(RT.tok) },
     body: JSON.stringify({ name: 'e', data: JSON.stringify(data) }) }).catch(() => {});
 }
+/* wer gerade online ist: angemeldete Geräte melden sich alle 20 Sekunden */
+const ONLINE = {};
+const isOnline = i => i === S.me || (ONLINE[i] && performance.now() - ONLINE[i] < 50000);
+function heartbeat(){ if (S.me != null && document.visibilityState === 'visible') rtSend({ t: 'hb' }); }
+setInterval(heartbeat, 20000);
 function onRt(m){
   if (!m || typeof m !== 'object' || m.clientId === RT.me) return;
   let d = m.data; if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { return; } }
   if (!d || typeof d !== 'object') return;
   /* nur angemeldete Figuren dürfen ihre eigene Figur bewegen; alles andere wird ignoriert */
   const from = typeof m.clientId === 'string' && /^f\d{1,2}$/.test(m.clientId) ? +m.clientId.slice(1) : null;
+  if (from != null) { if (d.t === 'bye') { delete ONLINE[from]; return; } ONLINE[from] = performance.now(); if (d.t === 'hb') return; }
   const now = performance.now(), key = d.t + (from ?? 'v');
   if (now - (RT.seen[key] || 0) < (d.t === 'poop' ? 2500 : 400)) return; RT.seen[key] = now;
   if (d.t === 'trick' && from != null && from !== S.me && typeof d.k === 'string' && Object.hasOwn(TRICKS, d.k) && S.claims[from] != null) { const F = fig(from), at = Number(d.at); if (F && Number.isFinite(at) && Math.abs(at - srvNow()) < 15000) startTrick(d.k, F, at); }
@@ -1788,6 +1796,6 @@ Promise.all([document.fonts ? document.fonts.load('700 100px Jost').catch(() => 
   go();
   rtStart();
   setInterval(() => { if (document.visibilityState === 'visible' && (view === 'pick' || view === 'lobby') && !busy) refresh().then(syncFigs).catch(() => {}); }, 12000);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { refresh().then(syncFigs).catch(() => {}); if (RT.on && (!RT.es || RT.es.readyState === 2)) rtStart(); } });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && S.me != null) rtSend({ t: 'bye' }); if (document.visibilityState === 'visible') { heartbeat(); refresh().then(syncFigs).catch(() => {}); if (RT.on && (!RT.es || RT.es.readyState === 2)) rtStart(); } });
 });
 }
