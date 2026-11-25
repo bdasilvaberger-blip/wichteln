@@ -25,7 +25,7 @@ async function refresh(){
   const t0 = Date.now(), d = await api('state'), t1 = Date.now();
   /* Serverzeit mit halber Laufzeit: so laufen die Aktionen auf allen Geräten im selben Takt */
   const sk = d.now - (t0 + t1) / 2;
-  if (!SKEWN || t1 - t0 < SKEWRT) { SKEW = sk; SKEWRT = t1 - t0; } else SKEW += (sk - SKEW) * .2;
+  if (!SKEWN || t1 - t0 < SKEWRT || Math.abs(sk - SKEW) > 2000) { SKEW = sk; SKEWRT = t1 - t0; } else SKEW += (sk - SKEW) * .2;
   SKEWN++; DEADLINE = d.deadline;
   const c = {}; for (const k in d.claims) c[Number(k)] = d.claims[k];
   S.claims = c;
