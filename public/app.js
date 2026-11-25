@@ -1332,13 +1332,14 @@ function setView(v, quiet){
   $('scene').classList.toggle('away', v === 'name' || v === 'result' || v === 'code');
   $('codeStage').classList.toggle('on', v === 'code');
   $('nameStage').classList.toggle('on', v === 'name');
+  if (v !== 'name' && $('notice').open) $('notice').close();
   $('resStage').classList.toggle('on', v === 'result');
   $('scroll').hidden = v !== 'pick' || !open;
   $('info').hidden = v !== 'pick' && v !== 'lobby';
   $('drawBtn').hidden = v !== 'lobby' || open;
   $('acts').hidden = v !== 'lobby' || !open;
   if (v === 'pick') say(!open ? 'Registration is closed. Already in? Tap your figure.' : sel == null ? 'Choose your avatar. Tap a black figure.' + cd : DOTS + "Nice pick. Let's give it your name");
-  if (v === 'name') { $('nameForm').hidden = false; $('pinBox').hidden = true; $('nameStage').classList.remove('pin'); say('Enter your name.'); setTimeout(() => $('nameIn').focus(), RM ? 0 : 700); }
+  if (v === 'name') { $('nameForm').hidden = false; $('pinBox').hidden = true; $('nameStage').classList.remove('pin'); say('Enter your real name.'); clearTimeout(noticeT); noticeT = setTimeout(() => { if (view === 'name' && !$('nameForm').hidden && !$('notice').open) $('notice').showModal(); }, RM ? 0 : 750); }
   if (v === 'code') { say('Enter your code.'); setTimeout(() => $('codeIn').focus(), RM ? 0 : 700); }
   if (v === 'lobby') {
     const mine = S.draws[S.me];
@@ -1451,7 +1452,7 @@ function next(){
 }
 function back(){ if ((view !== 'name' && view !== 'code') || $('faq').open || busy) return; const c = view === 'name' ? $('nameC') : $('codeC'); setView('pick'); startFly('out', [{ F: fig(sel), wave: true }], c); if (S.claims[sel] != null || c === $('nameC')) { sel = null; setView('pick'); } }
 $('scroll').addEventListener('click', next);
-addEventListener('keydown', e => { if (e.target.closest('input')) return; if (['ArrowDown','PageDown'].includes(e.key)) next(); if (['ArrowUp','PageUp','Escape'].includes(e.key)) back(); });
+addEventListener('keydown', e => { if (e.target.closest('input') || $('notice').open || $('faq').open) return; if (['ArrowDown','PageDown'].includes(e.key)) next(); if (['ArrowUp','PageUp','Escape'].includes(e.key)) back(); });
 
 $('nameForm').addEventListener('submit', e => {
   e.preventDefault();
@@ -1528,6 +1529,10 @@ function runDraw(pool, pickI){
 }
 $('info').addEventListener('click', openFaq);
 $('faqClose').addEventListener('click', () => $('faq').close());
+/* Hinweis vor der Namenseingabe: der echte Name, damit man weiss, für wen das Geschenk ist */
+let noticeT = 0;
+$('noticeOk').addEventListener('click', () => $('notice').close());
+$('notice').addEventListener('close', () => { if (view === 'name') setTimeout(() => $('nameIn').focus(), 50); });
 /* Tipp neben das Fenster schliesst es; der Tipp, der es geöffnet hat, zählt nicht */
 let faqAt = 0;
 function openFaq(){ if ($('faq').open) return; faqAt = performance.now(); $('faq').showModal(); }
