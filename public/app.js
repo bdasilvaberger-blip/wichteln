@@ -230,7 +230,7 @@ function initGL(){
     #endif
     vN = normalize(normalMatrix * n); gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0); }`;
   const fsx = `uniform float uId; varying vec3 vN; void main(){ gl_FragColor = vec4(normalize(vN) * .5 + .5, uId / 255.0); }`;
-  GL.mat = [0, 1, 2, 3, 4, 5].map(id => new THREE.ShaderMaterial({ vertexShader: vs, fragmentShader: fsx, uniforms: { uId: { value: id } }, side: THREE.DoubleSide }));
+  GL.mat = [0, 1, 2, 3, 4].map(id => new THREE.ShaderMaterial({ vertexShader: vs, fragmentShader: fsx, uniforms: { uId: { value: id } }, side: THREE.DoubleSide }));
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), GL.mat[0]); ground.rotation.x = -Math.PI / 2; ground.position.y = -.01;
   GL.scene.add(ground);
   GL.cam = new THREE.OrthographicCamera(-1, 1, 1, -1, -6000, 6000);
@@ -242,13 +242,6 @@ function initGL(){
     const c = new THREE.InstancedMesh(cyl, GL.mat[id], N * 14), sp = new THREE.InstancedMesh(sph, GL.mat[id], N * 18);
     c.frustumCulled = sp.frustumCulled = false; GL.scene.add(c); GL.scene.add(sp);
     GL.parts[key] = { c, sp, nc: 0, ns: 0 };
-  }
-  /* Beagle: weiss mit Kontur, schwarzer Sattel und Ohren; bleibt auch im Konturbild */
-  GL.dog = {};
-  for (const [key, id] of [['w', 5], ['k', 1]]) {
-    const c = new THREE.InstancedMesh(cyl, GL.mat[id], 16), sp = new THREE.InstancedMesh(sph, GL.mat[id], 16);
-    c.frustumCulled = sp.frustumCulled = false; GL.scene.add(c); GL.scene.add(sp);
-    GL.dog[key] = { c, sp, nc: 0, ns: 0 };
   }
   /* Filter: Kanten aus Normalen, Tiefe und Farbkennung */
   GL.post = new THREE.Scene(); GL.pcam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -263,9 +256,8 @@ function initGL(){
         float da = texture2D(tD, vUv + o).x, db = texture2D(tD, vUv - o).x;
         vec3 n0 = c0.xyz * 2.0 - 1.0;
         float e = 0.0;
-        float soft = step(4.5, c0.w * 255.0) * step(c0.w * 255.0, 5.5);
-        e = max(e, smoothstep(.86, .7, dot(n0, a.xyz * 2.0 - 1.0)) * (1.0 - soft));
-        e = max(e, smoothstep(.86, .7, dot(n0, b.xyz * 2.0 - 1.0)) * (1.0 - soft));
+        e = max(e, smoothstep(.86, .7, dot(n0, a.xyz * 2.0 - 1.0)));
+        e = max(e, smoothstep(.86, .7, dot(n0, b.xyz * 2.0 - 1.0)));
         e = max(e, step(.5, abs(a.w - c0.w) * 255.0)); e = max(e, step(.5, abs(b.w - c0.w) * 255.0));
         e = max(e, smoothstep(uDT, uDT * 2.0, abs(da + db - 2.0 * d0)));
         return e;
@@ -689,19 +681,37 @@ function makeDog(){
 function dogStep(dt){
   const D = DOG; if (!D) return;
   D.t -= dt; D.ph += dt * (2 + D.sp * 14);
+  /* eine Figur in der Nähe streichelt den Hund */
+  if (D.mode === 'pet' && (!D.petF || !D.petF.pet)) { D.mode = 'walk'; D.t = 2; D.petF = null; }
+  const petOk = F => F.surf < 0 && !F.act && !F.lean && !F.sit && !F.drag && !F.fetch && !F.pickUp && !F.pet && !F.leave && !(F.enter > 0) && !F.flyHide && F.i !== sel && clock > (F.petCool || 0);
+  const dist = F => Math.hypot(F.x - D.x, (F.g - D.g) / C);
+  if (D.mode === 'visit' && (!D.vF || !petOk(D.vF) || D.t <= 0)) { D.mode = 'walk'; D.t = 2; D.vF = null; }
+  if (D.mode === 'visit' && dist(D.vF) < FH * 1.4) { D.vF.goal = null; D.vF.goalStage = 0; D.vF.pause = Math.max(D.vF.pause || 0, .5); }
+  if ((D.mode === 'walk' || D.mode === 'sniff' || D.mode === 'visit') && Math.random() < dt * (D.mode === 'visit' ? 8 : .5)) {
+    const F = D.mode === 'visit' ? (dist(D.vF) < FH * .62 && Math.abs(D.vF.g - D.g) / C < FH * .2 ? D.vF : null) : Fs.find(F => petOk(F) && !F.goal && dist(F) < FH * .62 && Math.abs(F.x - D.x) > FH * .35 && Math.abs(F.g - D.g) / C < FH * .2);
+    if (F) { D.vF = null; const dur = 2.4 + Math.random() * 1.6; F.pet = { t: 0, dur }; F.goal = null; F.goalStage = 0; D.mode = 'pet'; D.t = dur; D.petF = F; }
+  }
   if (D.t <= 0) {
     const r = Math.random();
     if (D.mode !== 'poop' && clock - D.lastPoop > 25 && POOPS.length < 2 && r < .3) { D.mode = 'poop'; D.t = 2.6; }
-    else if (D.mode === 'walk' && r < .6) { D.mode = 'sniff'; D.t = 1.5 + Math.random() * 2.5; }
+    else if (D.mode === 'walk' && r < .5 && clock - (D.lastVisit || -30) > 14) {
+      /* zu einer Figur laufen, damit sie ihn streichelt */
+      let best = null, bd = FH * 8; for (const F of Fs) if (petOk(F) && dist(F) < bd) { bd = dist(F); best = F; }
+      if (best) { D.mode = 'visit'; D.vF = best; D.vS = D.x < best.x ? -1 : 1; D.t = 9; D.lastVisit = clock; } else { D.mode = 'walk'; D.t = 2.5 + Math.random() * 4; }
+    }
+    else if (D.mode === 'walk' && r < .75) { D.mode = 'sniff'; D.t = 1.5 + Math.random() * 2.5; }
     else { D.mode = 'walk'; D.t = 2.5 + Math.random() * 4; }
   }
   const free = a2 => { for (const L of [.15, .3, .45]) if (!clearAt(-1, D.x + Math.cos(a2) * L * FH, D.g + Math.sin(a2) * L * FH * C, .22)) return false; return true; };
   let want = 0;
-  if (D.mode === 'walk') {
-    want = .5;
-    let desired = D.a + (Math.sin(clock * .7 + 1) * 1.2 + Math.sin(clock * 1.9) * .6) * dt;
+  if (D.mode === 'walk' || D.mode === 'visit') {
+    want = D.mode === 'visit' ? .65 : .5;
+    /* beim Besuch seitlich neben die Figur, damit man das Streicheln sieht */
+    const vx = D.mode === 'visit' ? D.vF.x + D.vS * FH * .5 : 0, vg = D.mode === 'visit' ? D.vF.g : 0, vd = D.mode === 'visit' ? Math.hypot(vx - D.x, (vg - D.g) / C) : 0;
+    let desired = D.mode === 'visit' ? (vd < FH * .12 ? Math.atan2(0, -D.vS) : Math.atan2((vg - D.g) / C, vx - D.x)) : D.a + (Math.sin(clock * .7 + 1) * 1.2 + Math.sin(clock * 1.9) * .6) * dt;
+    if (D.mode === 'visit') want = cl(vd / (FH * .4)) * .65;
     if (D.x < FH || D.x > W - FH || D.g < top() || D.g > bottom()) desired = Math.atan2((Hh / 2 - D.g) / C, W / 2 - D.x);
-    for (const F of Fs) { if (F.surf >= 0 || F.drag) continue; const dx = F.x - D.x, dg = (F.g - D.g) / C, d = Math.hypot(dx, dg);
+    for (const F of Fs) { if (F.surf >= 0 || F.drag || F === D.vF) continue; const dx = F.x - D.x, dg = (F.g - D.g) / C, d = Math.hypot(dx, dg);
       if (d < FH * .5) desired -= Math.sign(Math.sin(Math.atan2(dg, dx) - D.a) || 1) * 2 * dt * (1 - d / (FH * .5)); }
     let pick = null; for (const da of [0, .4, -.4, .8, -.8, 1.3, -1.3, 2, -2, Math.PI]) if (free(desired + da)) { pick = desired + da; break; }
     if (pick === null) { want = 0; D.a += 2 * dt; } else { let d = pick - D.a; d = Math.atan2(Math.sin(d), Math.cos(d)); D.a += Math.sign(d) * Math.min(Math.abs(d), 3 * dt); if (Math.abs(d) > 1) want *= .3; }
@@ -709,9 +719,10 @@ function dogStep(dt){
   D.sp = lerp(D.sp, want, Math.min(1, dt * 4));
   const nx = D.x + Math.cos(D.a) * D.sp * FH * dt, ng = D.g + Math.sin(D.a) * D.sp * FH * dt * C;
   /* nie in eine Figur hineinlaufen */
-  const tooNear = Fs.some(F => F.surf < 0 && !F.drag && Math.hypot(F.x - nx, (F.g - ng) / C) < FH * .32 && Math.hypot(F.x - nx, (F.g - ng) / C) < Math.hypot(F.x - D.x, (F.g - D.g) / C));
+  const tooNear = Fs.some(F => F.surf < 0 && !F.drag && Math.hypot(F.x - nx, (F.g - ng) / C) < FH * (F === D.vF ? .42 : .32) && Math.hypot(F.x - nx, (F.g - ng) / C) < Math.hypot(F.x - D.x, (F.g - D.g) / C));
   if (D.sp > .01 && !tooNear && clearAt(-1, nx, ng, .15)) { D.x = nx; D.g = ng; } else if (tooNear) D.a += 2.5 * dt;
-  D.sniff = lerp(D.sniff, D.mode === 'sniff' ? 1 : D.mode === 'walk' ? .25 : 0, Math.min(1, dt * 4));
+  if (D.mode === 'pet' && D.petF) { let d = Math.atan2((D.petF.g - D.g) / C, D.petF.x - D.x) - D.a; d = Math.atan2(Math.sin(d), Math.cos(d)); D.a += Math.sign(d) * Math.min(Math.abs(d), 3 * dt); }
+  D.sniff = lerp(D.sniff, D.mode === 'sniff' ? 1 : D.mode === 'walk' || D.mode === 'visit' ? .25 : 0, Math.min(1, dt * 4));
   D.squat = lerp(D.squat, D.mode === 'poop' && D.t > .5 ? 1 : 0, Math.min(1, dt * 5));
   if (D.mode === 'poop' && D.t < 1.2 && !D.dropped) { D.dropped = true; D.lastPoop = clock;
     POOPS.push({ x: D.x - Math.cos(D.a) * FH * .32, g: D.g - Math.sin(D.a) * FH * .32 * C, born: clock, who: null }); }
@@ -723,7 +734,7 @@ function dogTo3D(){
   const R = FH * 1.3, fw = v3(Math.cos(D.a), Math.sin(D.a), 0), rt = v3(-Math.sin(D.a), Math.cos(D.a), 0), up = v3(0, 0, 1);
   const L = (f, r, z) => add(add(mul(fw, f * R), mul(rt, r * R)), mul(up, z * R));
   const w = p => toW({ x: D.x, g: D.g }, { z: 0 }, p), q = new THREE.Quaternion().setFromAxisAngle(_y, -D.a);
-  const Wt = GL.dog.w, K = GL.dog.k, mv = cl(D.sp / .3), sq = D.squat, sn = D.sniff;
+  const Wt = GL.parts.p, K = GL.parts.p, mv = cl(D.sp / .3), sq = D.squat, sn = D.sniff;
   const nod = Math.sin(clock * 9) * .012 * sn;
   /* Rumpf, Sattel, Brust */
   const bz = .24 - sq * .05;
@@ -733,7 +744,7 @@ function dogTo3D(){
   const head = L(.25 + sn * .04, 0, .36 - sn * .22 + nod);
   addSph(Wt, w(head), .075 * R);
   const nose = add(head, L(.09, 0, -.03 - sn * .03));
-  addCyl(Wt, w(head), w(nose), .038 * R); addSph(K, w(nose), .022 * R);
+  addCyl(Wt, w(head), w(nose), .038 * R); addSph(GL.parts.k, w(nose), .022 * R);
   for (const sd of [1, -1]) addEll(K, w(add(head, L(-.01, sd * .065, -.05))), q, .035 * R, .075 * R, .022 * R);
   /* Beine im Trab, hinten beim Hinsetzen eingeknickt */
   for (const [f, r, off, back] of [[.15, .065, 0, 0], [.15, -.065, Math.PI, 0], [-.15, .065, Math.PI, 1], [-.15, -.065, 0, 1]]) {
@@ -742,11 +753,11 @@ function dogTo3D(){
     addCyl(Wt, w(hip), w(foot), .028 * R);
   }
   /* Schwanz: wedelt, beim Haufen hoch */
-  const tb = L(-.22, 0, bz + .05), wag = Math.sin(clock * (sn > .5 ? 16 : 10)) * .05;
+  const tb = L(-.22, 0, bz + .05), wag = Math.sin(clock * (D.mode === 'pet' ? 22 : sn > .5 ? 16 : 10)) * (D.mode === 'pet' ? .08 : .05);
   addCyl(Wt, w(tb), w(add(tb, L(-.06 - sq * .02, wag, .13 + sq * .04))), .022 * R);
 }
 function poopTo3D(){
-  const P = GL.parts.k, R = FH;
+  const P = GL.parts.p, R = FH;
   for (const p of POOPS) { const b = w0 => toW({ x: p.x, g: p.g }, { z: 0 }, w0);
     addSph(P, b(v3(0, 0, .03 * R)), .04 * R); addSph(P, b(v3(0, 0, .07 * R)), .03 * R); addSph(P, b(v3(.005 * R, 0, .1 * R)), .018 * R); }
 }
@@ -755,10 +766,25 @@ function assignPoops(){
   for (const p of POOPS) {
     if (p.who && (!Fs.includes(p.who) || (p.who.fetch !== p && !(p.who.pickUp && p.who.pickUp.p === p)))) p.who = null;
     if (p.who || clock - p.born < 2.5) continue;
-    const ok = F => F.surf < 0 && !F.act && !F.lean && !F.sit && !F.drag && !F.leave && !(F.enter > 0) && !F.fetch && !F.pickUp && !F.flyHide && F.i !== sel && !F.skipPoop?.has(p);
+    const ok = F => F.surf < 0 && !F.act && !F.lean && !F.sit && !F.drag && !F.leave && !(F.enter > 0) && !F.fetch && !F.pickUp && !F.pet && !F.flyHide && F.i !== sel && !F.skipPoop?.has(p);
     const F = Fs.filter(ok).sort((a, b) => Math.hypot(a.x - p.x, a.g - p.g) - Math.hypot(b.x - p.x, b.g - p.g))[0];
     if (F) { p.who = F; F.fetch = p; F.fetchT = 0; F.goal = null; F.goalStage = 0; }
   }
+}
+/* den Hund streicheln: zum Hund drehen, bücken, Hand auf dem Rücken hin und her */
+function petPose(F, dt){
+  const K = F.pet, D = DOG; K.t += dt;
+  if (!D) { F.pet = null; return walkPose(F, { stride: 0 }); }
+  const dx = D.x - F.x, dg = (D.g - F.g) / C, dist = Math.hypot(dx, dg) / FH;
+  { let d = Math.atan2(dg, dx) - F.a; d = Math.atan2(Math.sin(d), Math.cos(d)); F.a += Math.sign(d) * Math.min(Math.abs(d), 5 * dt); }
+  const b = ez(seg(K.t, .15, .7)) * (1 - ez(seg(K.t, K.dur - .6, K.dur)));
+  const st = (1 - ez(cl(K.t / .4))) * .36 * cl((F.vs || 0) / .65); F.ph += dt * 7 * (st > .01 ? 1 : 0);
+  const P = walkPose(F, { stride: st });
+  P.pelvis.z -= .12 * b; P.lean = .45 * b;
+  const stroke = Math.sin(K.t * 7) * .05 * b;
+  P.handR = { r: lerp(-.17, -.03, b), f: lerp(0, cl(dist - .12, .14, .42) + stroke, b), z: lerp(.3, .4, b) };
+  if (K.t >= K.dur) { F.pet = null; F.petCool = clock + 12; F.vs = 0; }
+  return P;
 }
 function pickPose(F, dt){
   const K = F.pickUp; K.t += dt;
@@ -858,6 +884,8 @@ function step(F, dt){
     swingStep(F, cl(ax, -6000, 6000), cl(ay, -6000, 6000), dt, true);
   } else if (F.pickUp) {
     P = pickPose(F, dt);
+  } else if (F.pet) {
+    P = petPose(F, dt);
   } else if (F.sit) {
     P = sitPose(F, dt, held);
   } else if (F.lean) {
@@ -1004,7 +1032,6 @@ function step(F, dt){
 }
 function render(dt){
   for (const k in GL.parts) { GL.parts[k].nc = 0; GL.parts[k].ns = 0; }
-  for (const k in GL.dog) { GL.dog[k].nc = 0; GL.dog[k].ns = 0; }
   dogStep(dt); dogTo3D(); poopTo3D(); assignPoops();
   const c = ctx;
   c.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -1022,7 +1049,6 @@ function render(dt){
   }
   /* wer den Platz verlassen hat, verschwindet */
   for (let i = Fs.length - 1; i >= 0; i--) { const F = Fs[i]; if (F.leave && (F.x < -FH * .8 || F.x > W + FH * .8 || (F.surf >= 0 && !F.spot && !F.act))) Fs.splice(i, 1); }
-  for (const k in GL.dog) { const P = GL.dog[k]; P.c.count = P.nc; P.sp.count = P.ns; P.c.instanceMatrix.needsUpdate = P.sp.instanceMatrix.needsUpdate = true; }
   for (const k in GL.parts) { const P = GL.parts[k]; P.c.count = P.nc; P.sp.count = P.ns; P.c.instanceMatrix.needsUpdate = P.sp.instanceMatrix.needsUpdate = true; }
   /* erst Buchstaben allein (für die Konturen), dann alles (für die Figuren mit Verdeckung) */
   const figs = []; for (const k in GL.parts) figs.push(GL.parts[k].c, GL.parts[k].sp);
@@ -1155,7 +1181,8 @@ function phaseTick(){
   if (wasOpen && !isOpen()) { wasOpen = false; if (view === 'name') { sel = null; } syncFigs(); setView(S.me != null ? 'lobby' : 'pick'); return; }
 }
 setInterval(phaseTick, 1000);
-function say(t, shake){ const el = $('say'); el.textContent = t; if (shake) { el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); } }
+const DOTS = '\u0001';
+function say(t, shake){ const el = $('say'); const dots = t.startsWith(DOTS); el.textContent = dots ? t.slice(1) : t; if (dots) { const d = document.createElement('span'); d.className = 'dots'; d.setAttribute('aria-hidden', 'true'); d.innerHTML = '<i>.</i><i>.</i><i>.</i>'; el.append(d); } if (shake) { el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); } }
 function setView(v, quiet){
   view = v;
   const open = isOpen(), cd = '';
@@ -1166,7 +1193,7 @@ function setView(v, quiet){
   $('scroll').hidden = v !== 'pick' || !open;
   $('info').hidden = v !== 'pick' && v !== 'lobby';
   $('drawBtn').hidden = v !== 'lobby' || open;
-  if (v === 'pick') say(!open ? 'Registration is closed. Already in? Tap your figure.' : sel == null ? 'Choose your avatar. Tap a black figure.' + cd : 'Nice pick. Scroll on.');
+  if (v === 'pick') say(!open ? 'Registration is closed. Already in? Tap your figure.' : sel == null ? 'Choose your avatar. Tap a black figure.' + cd : DOTS + "Nice pick. Let's give it your name");
   if (v === 'name') { $('nameForm').hidden = false; $('pinBox').hidden = true; $('nameStage').classList.remove('pin'); say('Enter your name.'); setTimeout(() => $('nameIn').focus(), RM ? 0 : 700); }
   if (v === 'code') { say('Enter your code.'); setTimeout(() => $('codeIn').focus(), RM ? 0 : 700); }
   if (v === 'lobby') {
@@ -1186,9 +1213,23 @@ function tap(F){
     if (S.me == null) { sel = F.i; $('codeTxt').textContent = `Is this you, ${S.claims[F.i]}?`; $('codeIn').value = ''; setView('code'); startFly('in', [{ F, wave: true }], $('codeC')); return; }
     say(`This avatar belongs to ${S.claims[F.i]}. Pick a black figure.`, true); return; }
   sel = F.i; F.pause = 0; setView('pick');
+  /* kurz zeigen, welche Figur gewählt ist, dann gross zum Namen */
+  clearTimeout(pickT); pickT = setTimeout(() => { if (view === 'pick' && sel === F.i) next(); }, RM ? 300 : 1500);
 }
+let pickT = 0;
 
-/* Info Zeichen getroffen? Genau auf der Form, oben oder an der Seite */
+/* Hund getroffen? Doppelt antippen: er macht sofort einen Haufen */
+function onDog(x, y){
+  const D = DOG; if (!D) return false;
+  const cy = sy(D.g, 0, FH * .3);
+  return Math.abs(x - D.x) < FH * .45 && Math.abs(y - cy) < FH * .38;
+}
+let dogTapAt = 0;
+function tapDog(){
+  const now = performance.now(), D = DOG;
+  if (now - dogTapAt < 450) { dogTapAt = 0; if (D.mode !== 'poop' && POOPS.length < 4) { if (D.petF) D.petF.pet = null; D.mode = 'poop'; D.t = 2.6; D.dropped = false; } }
+  else dogTapAt = now;
+}
 /* Info Zeichen getroffen? Grosszügig um die Form herum, damit es auch mit dem Finger klappt */
 function onInfo(x, y){
   if (!letters.info) return false;
@@ -1200,20 +1241,21 @@ let drag = null;
 const pick = (x, y) => [...Fs].sort((a, b) => b.g - a.g).find(F => F.box && x >= F.box.x0 - 12 && x <= F.box.x1 + 12 && y >= F.box.y0 - 12 && y <= F.box.y1 + 12);
 cv.addEventListener('pointerdown', e => {
   if (view !== 'pick' && view !== 'lobby') return;
+  if (onDog(e.clientX, e.clientY) && !pick(e.clientX, e.clientY)) { tapDog(); return; }
   const F = pick(e.clientX, e.clientY);
   if (!F) {
     if (onInfo(e.clientX, e.clientY)) openFaq();
     /* Tipp ins Leere: gewählte Figur wieder abwählen */
-    else if (view === 'pick' && sel != null) { sel = null; setView('pick'); }
+    else if (view === 'pick' && sel != null) { sel = null; clearTimeout(pickT); setView('pick'); }
     return; }
   cv.setPointerCapture(e.pointerId);
   drag = { F, sx: e.clientX, sy: e.clientY, moved: false, ox: F.x - e.clientX, og: F.g - e.clientY };
   cv.classList.add('grabbing');
 });
 cv.addEventListener('pointermove', e => {
-  if (!drag) { const F = (view === 'pick' || view === 'lobby') && pick(e.clientX, e.clientY); cv.classList.toggle('grab', !!F); cv.classList.toggle('info', !F && (view === 'pick' || view === 'lobby') && onInfo(e.clientX, e.clientY)); return; }
+  if (!drag) { const F = (view === 'pick' || view === 'lobby') && pick(e.clientX, e.clientY); cv.classList.toggle('grab', !!F); cv.classList.toggle('info', !F && (view === 'pick' || view === 'lobby') && (onInfo(e.clientX, e.clientY) || onDog(e.clientX, e.clientY))); return; }
   const F = drag.F;
-  if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 6) { drag.moved = true; F.act = null; F.lean = null; F.sit = null; F.fetch = null; F.pickUp = null; F.topGoal = null; F.topPath = null; F.drag = { vx: 0 }; F.dropZ = 0; }
+  if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 6) { drag.moved = true; F.act = null; F.lean = null; F.sit = null; F.fetch = null; F.pickUp = null; F.pet = null; F.topGoal = null; F.topPath = null; F.drag = { vx: 0 }; F.dropZ = 0; }
   if (!drag.moved) return;
   const nx = e.clientX + drag.ox;
   F.drag.vx = lerp(F.drag.vx, (nx - F.x) / .016, .3);
@@ -1257,13 +1299,8 @@ function next(){
   $('nameIn').value = ''; setView('name');
   startFly('in', [{ F: fig(sel), wave: true }], $('nameC'));
 }
-function back(){ if ((view !== 'name' && view !== 'code') || $('faq').open || busy) return; const c = view === 'name' ? $('nameC') : $('codeC'); setView('pick'); startFly('out', [{ F: fig(sel), wave: true }], c); if (S.claims[sel] != null) sel = null; }
+function back(){ if ((view !== 'name' && view !== 'code') || $('faq').open || busy) return; const c = view === 'name' ? $('nameC') : $('codeC'); setView('pick'); startFly('out', [{ F: fig(sel), wave: true }], c); if (S.claims[sel] != null || c === $('nameC')) { sel = null; setView('pick'); } }
 $('scroll').addEventListener('click', next);
-let lockW = 0;
-addEventListener('wheel', e => { const now = Date.now(); if (now < lockW || Math.abs(e.deltaY) < 20) return; lockW = now + 1000; e.deltaY > 0 ? next() : back(); }, {passive:true});
-let ty = null;
-addEventListener('touchstart', e => { ty = drag || e.target.closest('input,button') ? null : e.touches[0].clientY; }, {passive:true});
-addEventListener('touchend', e => { if (ty === null || drag) { ty = null; return; } const d = ty - e.changedTouches[0].clientY; ty = null; if (d > 60) next(); if (d < -60) back(); }, {passive:true});
 addEventListener('keydown', e => { if (e.target.closest('input')) return; if (['ArrowDown','PageDown'].includes(e.key)) next(); if (['ArrowUp','PageUp','Escape'].includes(e.key)) back(); });
 
 $('nameForm').addEventListener('submit', e => {
@@ -1286,6 +1323,8 @@ $('nameForm').addEventListener('submit', e => {
     if (err.status === 409 && err.status === 409 && /figure/.test(err.message)) refresh().then(() => { syncFigs(); }).catch(() => {});
   }).finally(() => { busy = false; });
 });
+$('nameBack').addEventListener('click', back);
+$('codeBack').addEventListener('click', back);
 $('pinOk').addEventListener('click', () => { sel = null; setView('lobby'); startFly('out', [{ F: fig(S.me), wave: true }], $('nameC')); });
 $('codeForm').addEventListener('submit', e => {
   e.preventDefault();

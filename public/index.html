@@ -78,11 +78,15 @@ button.pill.pink{background:var(--p);border-color:var(--p);color:var(--k)}
 #say.shake{animation:shake .4s}
 @keyframes shake{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
 #scroll{width:50px;height:50px;border-radius:50%;border:1.5px solid var(--k);background:var(--w);color:var(--k);display:grid;place-items:center;cursor:pointer;padding:0}
-#scroll svg{width:16px;height:16px;animation:nudge 1.6s ease-in-out infinite}
+#scroll span{font-size:26px;font-weight:700;margin-top:1px;line-height:1;animation:nudge 1.6s ease-in-out infinite}
+.dots i{font-style:normal;animation:dot 1.2s infinite}
+.dots i:nth-child(2){animation-delay:.2s}.dots i:nth-child(3){animation-delay:.4s}
+@keyframes dot{0%,60%,100%{opacity:.15}30%{opacity:1}}
+.link{font:inherit;font-size:15px;color:var(--mid);background:none;border:0;padding:10px;margin-top:10px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
 #scroll.ready{background:var(--k);color:var(--w)}
-@keyframes nudge{0%,100%{transform:translateY(-3px)}50%{transform:translateY(4px)}}
+@keyframes nudge{0%,100%{transform:scale(1)}50%{transform:scale(1.18)}}
 @media(min-width:1024px){#say{font-size:18px}button.pill{font-size:18px;min-height:54px;padding:12px 30px}input{font-size:26px}}
-@media(prefers-reduced-motion:reduce){#scroll svg{animation:none}#scene,.stage,.bigc{transition-duration:.01s}}
+@media(prefers-reduced-motion:reduce){#scroll span,.dots i{animation:none;opacity:1}#scene,.stage,.bigc{transition-duration:.01s}}
 </style>
 </head>
 <body>
@@ -96,6 +100,7 @@ button.pill.pink{background:var(--p);border-color:var(--p);color:var(--k)}
     <input id="nameIn" placeholder="Your name" autocomplete="given-name" maxlength="24" aria-label="Your name">
     <button class="pill" type="submit">Done</button>
   </form>
+  <button class="link" type="button" id="nameBack">Pick another figure</button>
   <div id="pinBox" hidden>
     <p class="label">Your code</p>
     <p class="code" id="pinTxt"></p>
@@ -111,6 +116,7 @@ button.pill.pink{background:var(--p);border-color:var(--p);color:var(--k)}
     <input id="codeIn" placeholder="Code" inputmode="numeric" autocomplete="one-time-code" maxlength="4" pattern="[0-9]{4}" aria-label="Your 4-digit code">
     <button class="pill" type="submit">Continue</button>
   </form>
+  <button class="link" type="button" id="codeBack">Back</button>
 </section>
 
 <section class="stage" id="resStage" aria-live="polite">
@@ -135,7 +141,7 @@ button.pill.pink{background:var(--p);border-color:var(--p);color:var(--k)}
 </dialog>
 <div id="foot">
   <button class="pill pink" type="button" id="drawBtn" hidden>Draw</button>
-  <button id="scroll" type="button" aria-label="Next"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1v13M2.5 8.5 8 14l5.5-5.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
+  <button id="scroll" type="button" aria-label="Continue"><span aria-hidden="true">!</span></button>
   <p id="say" role="status"></p>
 </div>
 
