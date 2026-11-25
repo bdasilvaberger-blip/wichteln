@@ -84,8 +84,16 @@ button.pill.pink{background:var(--p);border-color:var(--p);color:var(--k)}
 @keyframes dot{0%,60%,100%{opacity:.15}30%{opacity:1}}
 .link{font:inherit;font-size:15px;color:var(--mid);background:none;border:0;padding:10px;margin-top:10px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
 #scroll.ready{background:var(--k);color:var(--w)}
+#acts{display:flex;justify-content:center;gap:8px;margin-top:2px}
+#acts[hidden]{display:none}
+#acts button{position:relative;overflow:hidden;font:inherit;font-weight:500;font-size:14px;letter-spacing:.01em;height:38px;padding:0 15px;border-radius:999px;border:1.5px solid var(--k);background:var(--w);color:var(--k);cursor:pointer;white-space:nowrap;-webkit-tap-highlight-color:transparent}
+#acts .fill{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--k);color:var(--w);clip-path:inset(0 calc((1 - var(--p,0)) * 100%) 0 0)}
+#acts button:focus-visible{outline:2px solid var(--k);outline-offset:3px}
+@media(hover:hover){#acts button:not(.on):hover{background:#f2f2f2}}
+@media(max-width:560px){#acts{gap:6px}#acts button{height:36px;padding:0 11px}}
+@media(max-width:350px){#acts button{font-size:13px;padding:0 9px}}
 @keyframes nudge{0%,100%{transform:scale(1)}50%{transform:scale(1.18)}}
-@media(min-width:1024px){#say{font-size:18px}button.pill{font-size:18px;min-height:54px;padding:12px 30px}input{font-size:26px}}
+@media(min-width:1024px){#acts{gap:10px}#acts button{font-size:16px;height:44px;padding:0 20px}#say{font-size:18px}button.pill{font-size:18px;min-height:54px;padding:12px 30px}input{font-size:26px}}
 @media(prefers-reduced-motion:reduce){#scroll span,.dots i{animation:none;opacity:1}#scene,.stage,.bigc{transition-duration:.01s}}
 </style>
 </head>
@@ -143,6 +151,12 @@ button.pill.pink{background:var(--p);border-color:var(--p);color:var(--k)}
   <button class="pill pink" type="button" id="drawBtn" hidden>Draw</button>
   <button id="scroll" type="button" aria-label="Continue"><span aria-hidden="true">!</span></button>
   <p id="say" role="status"></p>
+  <div id="acts" role="group" aria-label="Play with your avatar" hidden>
+    <button type="button" data-k="twerk" aria-pressed="false"><span>Booty shake</span><span class="fill" aria-hidden="true">Booty shake</span></button>
+    <button type="button" data-k="roll" aria-pressed="false"><span>Roll around</span><span class="fill" aria-hidden="true">Roll around</span></button>
+    <button type="button" data-k="jump" aria-pressed="false"><span>Jump</span><span class="fill" aria-hidden="true">Jump</span></button>
+    <button type="button" data-k="pet" aria-pressed="false"><span>Pet Mellow</span><span class="fill" aria-hidden="true">Pet Mellow</span></button>
+  </div>
 </div>
 
 </body>

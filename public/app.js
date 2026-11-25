@@ -61,6 +61,7 @@ const ez = t => t * t * (3 - 2 * t);
 const v3 = (x, y, z) => ({x, y, z});
 const add = (a, b) => v3(a.x + b.x, a.y + b.y, a.z + b.z), sub = (a, b) => v3(a.x - b.x, a.y - b.y, a.z - b.z);
 const mul = (a, s) => v3(a.x * s, a.y * s, a.z * s), dot = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
+const cross = (a, b) => v3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x);
 const len = a => Math.hypot(a.x, a.y, a.z), nrm = a => { const l = len(a) || 1; return mul(a, 1 / l); };
 /* Zwei Knochen IK: Gelenk biegt Richtung bend */
 function ik(a, c, l1, l2, bend){
@@ -615,9 +616,12 @@ let Fs = [], view = 'pick', sel = null, last = 0, clock = 0;
 /* im Topf: nach Anmeldeschluss alle anderen Angemeldeten, bis man sein Los aufgedeckt hat */
 const eligible = () => isOpen() || S.me == null || S.draws[S.me] != null ? [] : Object.keys(S.claims).map(Number).filter(i => i !== S.me);
 const top = () => Hh * .05 + FH * .9, bottom = () => Hh - (mobile() ? 125 : desk() ? 120 : 105);
+/* Figuren bleiben über der Fusszeile, auch wenn dort die Aktionstasten stehen */
+let footTop = 1e9;
+const fbot = () => Math.min(bottom(), footTop - FH * .12);
 function inBounds(F){
   const m = FH * .45;
-  return F.x > m && F.x < W - m && F.g > top() && F.g < bottom();
+  return F.x > m && F.x < W - m && F.g > top() && F.g < fbot();
 }
 function build(){
   W = innerWidth; Hh = innerHeight; DPR = Math.min(2, Math.round(devicePixelRatio || 1)) || 1;
@@ -683,7 +687,8 @@ function dogStep(dt){
   D.t -= dt; D.ph += dt * (2 + D.sp * 14);
   /* eine Figur in der Nähe streichelt den Hund */
   if (D.mode === 'pet' && (!D.petF || !D.petF.pet)) { D.mode = 'walk'; D.t = 2; D.petF = null; }
-  const petOk = F => F.surf < 0 && !F.act && !F.lean && !F.sit && !F.drag && !F.fetch && !F.pickUp && !F.pet && !F.leave && !(F.enter > 0) && !F.flyHide && F.i !== sel && clock > (F.petCool || 0);
+  if (D.mode === 'stay' && (!D.petF || !D.petF.trick)) { D.mode = 'walk'; D.t = 2; D.petF = null; }
+  const petOk = F => F.surf < 0 && !F.act && !F.lean && !F.sit && !F.drag && !F.fetch && !F.pickUp && !F.pet && !F.trick && !F.leave && !(F.enter > 0) && !F.flyHide && F.i !== sel && clock > (F.petCool || 0);
   const dist = F => Math.hypot(F.x - D.x, (F.g - D.g) / C);
   if (D.mode === 'visit' && (!D.vF || !petOk(D.vF) || D.t <= 0)) { D.mode = 'walk'; D.t = 2; D.vF = null; }
   if (D.mode === 'visit' && dist(D.vF) < FH * 1.4) { D.vF.goal = null; D.vF.goalStage = 0; D.vF.pause = Math.max(D.vF.pause || 0, .5); }
@@ -691,7 +696,7 @@ function dogStep(dt){
     const F = D.mode === 'visit' ? (dist(D.vF) < FH * .62 && Math.abs(D.vF.g - D.g) / C < FH * .2 ? D.vF : null) : Fs.find(F => petOk(F) && !F.goal && dist(F) < FH * .62 && Math.abs(F.x - D.x) > FH * .35 && Math.abs(F.g - D.g) / C < FH * .2);
     if (F) { D.vF = null; const dur = 2.4 + Math.random() * 1.6; F.pet = { t: 0, dur }; F.goal = null; F.goalStage = 0; D.mode = 'pet'; D.t = dur; D.petF = F; }
   }
-  if (D.t <= 0) {
+  if (D.t <= 0 && D.mode !== 'stay') {
     const r = Math.random();
     if (D.mode !== 'poop' && clock - D.lastPoop > 25 && POOPS.length < 2 && r < .3) { D.mode = 'poop'; D.t = 2.6; }
     else if (D.mode === 'walk' && r < .5 && clock - (D.lastVisit || -30) > 14) {
@@ -704,13 +709,14 @@ function dogStep(dt){
   }
   const free = a2 => { for (const L of [.15, .3, .45]) if (!clearAt(-1, D.x + Math.cos(a2) * L * FH, D.g + Math.sin(a2) * L * FH * C, .22)) return false; return true; };
   let want = 0;
-  if (D.mode === 'walk' || D.mode === 'visit') {
+  const out = D.x < FH || D.x > W - FH || D.g < top() || D.g > fbot();
+  if (D.mode === 'walk' || D.mode === 'visit' || (D.mode === 'stay' && out)) {
     want = D.mode === 'visit' ? .65 : .5;
     /* beim Besuch seitlich neben die Figur, damit man das Streicheln sieht */
     const vx = D.mode === 'visit' ? D.vF.x + D.vS * FH * .5 : 0, vg = D.mode === 'visit' ? D.vF.g : 0, vd = D.mode === 'visit' ? Math.hypot(vx - D.x, (vg - D.g) / C) : 0;
-    let desired = D.mode === 'visit' ? (vd < FH * .12 ? Math.atan2(0, -D.vS) : Math.atan2((vg - D.g) / C, vx - D.x)) : D.a + (Math.sin(clock * .7 + 1) * 1.2 + Math.sin(clock * 1.9) * .6) * dt;
+    let desired = D.mode === 'stay' ? Math.atan2((Hh / 2 - D.g) / C, W / 2 - D.x) : D.mode === 'visit' ? (vd < FH * .12 ? Math.atan2(0, -D.vS) : Math.atan2((vg - D.g) / C, vx - D.x)) : D.a + (Math.sin(clock * .7 + 1) * 1.2 + Math.sin(clock * 1.9) * .6) * dt;
     if (D.mode === 'visit') want = cl(vd / (FH * .4)) * .65;
-    if (D.x < FH || D.x > W - FH || D.g < top() || D.g > bottom()) desired = Math.atan2((Hh / 2 - D.g) / C, W / 2 - D.x);
+    if (D.x < FH || D.x > W - FH || D.g < top() || D.g > fbot()) desired = Math.atan2((Hh / 2 - D.g) / C, W / 2 - D.x);
     for (const F of Fs) { if (F.surf >= 0 || F.drag || F === D.vF) continue; const dx = F.x - D.x, dg = (F.g - D.g) / C, d = Math.hypot(dx, dg);
       if (d < FH * .5) desired -= Math.sign(Math.sin(Math.atan2(dg, dx) - D.a) || 1) * 2 * dt * (1 - d / (FH * .5)); }
     let pick = null; for (const da of [0, .4, -.4, .8, -.8, 1.3, -1.3, 2, -2, Math.PI]) if (free(desired + da)) { pick = desired + da; break; }
@@ -721,7 +727,7 @@ function dogStep(dt){
   /* nie in eine Figur hineinlaufen */
   const tooNear = Fs.some(F => F.surf < 0 && !F.drag && Math.hypot(F.x - nx, (F.g - ng) / C) < FH * (F === D.vF ? .42 : .32) && Math.hypot(F.x - nx, (F.g - ng) / C) < Math.hypot(F.x - D.x, (F.g - D.g) / C));
   if (D.sp > .01 && !tooNear && clearAt(-1, nx, ng, .15)) { D.x = nx; D.g = ng; } else if (tooNear) D.a += 2.5 * dt;
-  if (D.mode === 'pet' && D.petF) { let d = Math.atan2((D.petF.g - D.g) / C, D.petF.x - D.x) - D.a; d = Math.atan2(Math.sin(d), Math.cos(d)); D.a += Math.sign(d) * Math.min(Math.abs(d), 3 * dt); }
+  if ((D.mode === 'pet' || (D.mode === 'stay' && !out)) && D.petF) { let d = Math.atan2((D.petF.g - D.g) / C, D.petF.x - D.x) - D.a; d = Math.atan2(Math.sin(d), Math.cos(d)); D.a += Math.sign(d) * Math.min(Math.abs(d), 3 * dt); }
   D.sniff = lerp(D.sniff, D.mode === 'sniff' ? 1 : D.mode === 'walk' || D.mode === 'visit' ? .25 : 0, Math.min(1, dt * 4));
   D.squat = lerp(D.squat, D.mode === 'poop' && D.t > .5 ? 1 : 0, Math.min(1, dt * 5));
   if (D.mode === 'poop' && D.t < 1.2 && !D.dropped) { D.dropped = true; D.lastPoop = clock;
@@ -734,7 +740,7 @@ function dogTo3D(){
   const R = FH * 1.3, fw = v3(Math.cos(D.a), Math.sin(D.a), 0), rt = v3(-Math.sin(D.a), Math.cos(D.a), 0), up = v3(0, 0, 1);
   const L = (f, r, z) => add(add(mul(fw, f * R), mul(rt, r * R)), mul(up, z * R));
   const w = p => toW({ x: D.x, g: D.g }, { z: 0 }, p), q = new THREE.Quaternion().setFromAxisAngle(_y, -D.a);
-  const Wt = GL.parts.p, K = GL.parts.p, mv = cl(D.sp / .3), sq = D.squat, sn = D.sniff;
+  const Wt = GL.parts.k, K = GL.parts.k, mv = cl(D.sp / .3), sq = D.squat, sn = D.sniff;
   const nod = Math.sin(clock * 9) * .012 * sn;
   /* Rumpf, Sattel, Brust */
   const bz = .24 - sq * .05;
@@ -744,7 +750,7 @@ function dogTo3D(){
   const head = L(.25 + sn * .04, 0, .36 - sn * .22 + nod);
   addSph(Wt, w(head), .075 * R);
   const nose = add(head, L(.09, 0, -.03 - sn * .03));
-  addCyl(Wt, w(head), w(nose), .038 * R); addSph(GL.parts.k, w(nose), .022 * R);
+  addCyl(Wt, w(head), w(nose), .038 * R); addSph(K, w(nose), .022 * R);
   for (const sd of [1, -1]) addEll(K, w(add(head, L(-.01, sd * .065, -.05))), q, .035 * R, .075 * R, .022 * R);
   /* Beine im Trab, hinten beim Hinsetzen eingeknickt */
   for (const [f, r, off, back] of [[.15, .065, 0, 0], [.15, -.065, Math.PI, 0], [-.15, .065, Math.PI, 1], [-.15, -.065, 0, 1]]) {
@@ -766,10 +772,108 @@ function assignPoops(){
   for (const p of POOPS) {
     if (p.who && (!Fs.includes(p.who) || (p.who.fetch !== p && !(p.who.pickUp && p.who.pickUp.p === p)))) p.who = null;
     if (p.who || clock - p.born < 2.5) continue;
-    const ok = F => F.surf < 0 && !F.act && !F.lean && !F.sit && !F.drag && !F.leave && !(F.enter > 0) && !F.fetch && !F.pickUp && !F.pet && !F.flyHide && F.i !== sel && !F.skipPoop?.has(p);
+    const ok = F => F.surf < 0 && !F.act && !F.lean && !F.sit && !F.drag && !F.leave && !(F.enter > 0) && !F.fetch && !F.pickUp && !F.pet && !F.trick && !F.flyHide && F.i !== sel && !F.skipPoop?.has(p);
     const F = Fs.filter(ok).sort((a, b) => Math.hypot(a.x - p.x, a.g - p.g) - Math.hypot(b.x - p.x, b.g - p.g))[0];
     if (F) { p.who = F; F.fetch = p; F.fetchT = 0; F.goal = null; F.goalStage = 0; }
   }
+}
+/* ---------- Spielen mit der eigenen Figur ---------- */
+const TRICKS = { twerk: 4.4, roll: 3.8, jump: 6 * .62 + .4, pet: 6 };
+const turnTo = (F, a, rate) => { let d = a - F.a; d = Math.atan2(Math.sin(d), Math.cos(d)); F.a += Math.sign(d) * Math.min(Math.abs(d), rate); };
+function petSpot(F){ const T = F.trick, D = DOG; if (T.side == null) T.side = F.x < D.x ? -1 : 1; return { x: D.x + T.side * FH * .5, g: D.g }; }
+function endTrick(F){ if (!F.trick) return; if (F.trick.kind === 'pet' && F.pet) F.pet = null; F.trick = null; F.hop = 0; F.vs = 0; F.sp = 0; }
+function startTrick(kind){
+  const F = fig(S.me); if (!F || F.drag || F.leave) return;
+  endTrick(F);
+  if (F.fetch) { F.fetch.who = null; F.fetch = null; }
+  F.goal = null; F.goalStage = 0; F.pause = 0; F.escT = 0;
+  /* laufende Haltungen sanft beenden, dann geht es los */
+  if (F.lean) F.lean.dur = Math.min(F.lean.dur, F.lean.t + .6);
+  if (F.sit) F.sit.dur = Math.min(F.sit.dur, F.sit.t + .7);
+  if (F.pet) F.pet.dur = Math.min(F.pet.dur, F.pet.t + .5);
+  F.trick = { kind, t: 0, dur: TRICKS[kind], wait: true, waitT: 0, p: 1 };
+  if (kind === 'pet') { if (!DOG) { F.trick = null; return; } DOG.mode = 'stay'; DOG.t = 30; DOG.petF = F; }
+}
+function trickTick(F, dt){
+  const T = F.trick;
+  if (T.wait) {
+    T.waitT += dt;
+    if (F.surf >= 0 && !F.act && T.kind === 'pet') { F.topWait = 0; F.sit = null; F.sitDone = true; }
+    if (!F.act && !F.lean && !F.sit && !F.pickUp && !F.pet && !F.flyHide && (T.kind !== 'pet' || F.surf < 0)) T.wait = false;
+    else if (T.waitT > 10) { endTrick(F); return; }
+    if (T.wait) return;
+    if (T.kind === 'pet') { const p = petSpot(F); T.dur = Math.hypot(p.x - F.x, (p.g - F.g) / C) / (F.want * 2.1 * FH) + 4.2; }
+    if (T.kind === 'roll') {
+      /* in die offenste Richtung rollen */
+      let best = F.a, bn = -1;
+      for (let k = 0; k < 16; k++) { const a2 = k * Math.PI / 8; let n = 0; for (let L = .25; L <= 2.6; L += .25) { const x = F.x + Math.cos(a2) * L * FH, g = F.g + Math.sin(a2) * L * FH * C; if (clearAt(F.surf, x, g, .2) && x > FH * .4 && x < W - FH * .4 && g > top() && g < fbot()) n++; else break; } if (n > bn + .5 * Math.abs(Math.sin(a2))) { bn = n; best = a2; } }
+      T.a = best; T.room = bn * .25 * FH;
+    }
+  }
+  T.t += dt; T.p = Math.min(T.p, T.t0 != null ? T.p0 * cl(1 - (T.t - T.t0) / (T.dur - T.t0)) : cl(1 - T.t / T.dur));
+  if (T.kind === 'pet' ? (T.petting && !F.pet) || T.t > T.dur + 2 : T.t >= T.dur) endTrick(F);
+}
+function trickPose(F, dt){
+  const T = F.trick, t = T.t, e = ez(seg(t, 0, .35)) * (1 - ez(seg(t, T.dur - .45, T.dur)));
+  let P;
+  if (T.kind === 'twerk') {
+    /* im Profil, vornübergebeugt, Hände auf den Knien, der Po wippt schnell */
+    if (T.a == null) T.a = F.x < W / 2 ? Math.PI - .35 : .35;
+    turnTo(F, T.a, 7 * dt);
+    P = walkPose(F, { stride: 0 });
+    const s = Math.sin(t * 21), s2 = Math.sin(t * 10.5);
+    P.pelvis.z += (-.13 + s * .065) * e; P.pelvis.f = (-.09 - s * .06) * e; P.pelvis.r = s2 * .018 * e;
+    P.lean = (1.05 + s * .12) * e; P.yaw = 0;
+    P.footL = { r: lerp(.075, .13, e), f: 0, z: 0 }; P.footR = { r: lerp(-.075, -.13, e), f: 0, z: 0 };
+    P.kneeBackL = 0; P.kneeBackR = 0;
+    P.handL = { r: lerp(.17, .12, e), f: lerp(0, -.04, e), z: lerp(.3, .46, e) };
+    P.handR = { r: lerp(-.17, -.12, e), f: lerp(0, -.04, e), z: lerp(.3, .46, e) };
+  } else if (T.kind === 'jump') {
+    /* sechs Sprünge, Arme in der Luft */
+    turnTo(F, Math.PI / 2, 6 * dt);
+    const per = .62, t0 = t - .25, k = Math.floor(t0 / per), q = t0 >= 0 && k < 6 ? (t0 % per) / per : -1;
+    const air = q > .2 && q < .85 ? (q - .2) / .65 : -1;
+    F.hop = air >= 0 ? 4 * air * (1 - air) * .3 : 0;
+    const crouch = q < 0 ? 0 : q <= .2 ? Math.sin(q / .2 * Math.PI / 2) : q >= .85 ? Math.sin((1 - q) / .15 * Math.PI / 2) : 0;
+    P = walkPose(F, { stride: 0 });
+    P.pelvis.z -= crouch * .09; P.lean = crouch * .18;
+    const tuck = air >= 0 ? Math.sin(air * Math.PI) : 0;
+    P.footL = { r: .08, f: .02 * tuck, z: .05 * tuck, toe: .6 * tuck }; P.footR = { r: -.08, f: .02 * tuck, z: .05 * tuck, toe: .6 * tuck };
+    const up = ez(seg(t, 0, .3)) * (1 - ez(seg(t, T.dur - .35, T.dur))), wv = Math.sin(t * 12) * .03;
+    P.handL = { r: lerp(.17, .23, up), f: lerp(0, .03, up) + wv, z: lerp(.3, 1.12 - crouch * .05, up) };
+    P.handR = { r: lerp(-.17, -.23, up), f: lerp(0, .03, up) - wv, z: lerp(.3, 1.12 - crouch * .05, up) };
+    P.armsUp = up > .5;
+  } else {
+    /* Purzelbaum: zusammenrollen und als Kugel vorwärts rollen */
+    turnTo(F, T.a, 8 * dt);
+    const tk = ez(seg(t, 0, .4)) * (1 - ez(seg(t, T.dur - .5, T.dur)));
+    P = walkPose(F, { stride: 0 });
+    P.pelvis.z = lerp(.5, .27, tk); P.lean = .95 * tk; P.yaw = 0;
+    P.footL = { r: .07, f: .1 * tk, z: 0 }; P.footR = { r: -.07, f: .1 * tk, z: 0 };
+    P.handL = { r: lerp(.17, .1, tk), f: lerp(0, -.02, tk), z: lerp(.3, .52, tk) };
+    P.handR = { r: lerp(-.17, -.1, tk), f: lerp(0, -.02, tk), z: lerp(.3, .52, tk) };
+    const n = T.room > FH * 1.4 ? 2 : 1, th = Math.PI * 2 * n * ez(seg(t, .45, T.dur - .55));
+    const dth = th - (T.th || 0); T.th = th; T.tk = tk;
+    /* soweit Platz ist, kommt die Kugel voran; sonst rollt sie an Ort */
+    const adv = Math.min(dth * .2 * FH, Math.max(0, (T.room || 0) - FH * .3 - (T.went || 0)));
+    const nx = F.x + Math.cos(F.a) * adv, ng = F.g + Math.sin(F.a) * adv * C;
+    if (adv > 0 && clearAt(F.surf, nx, ng, .2)) { F.x = nx; F.g = ng; T.went = (T.went || 0) + adv; }
+  }
+  F.vs = 0;
+  return P;
+}
+/* alle Gelenke um die Mitte der zusammengerollten Figur drehen und auf den Boden setzen */
+function rollJ(J, T){
+  const th = T.th, k = J.rt, c = mul(add(add(J.pel, J.chest), add(J.kneeL, J.kneeR)), .25);
+  const cs = Math.cos(th), sn = Math.sin(th);
+  const rot = v => { const kv = dot(k, v); return add(add(mul(v, cs), mul(cross(k, v), sn)), mul(k, kv * (1 - cs))); };
+  const out = { ...J };
+  const pts = ['pel','chest','shL','shR','hipL','hipR','neck','headC','kneeL','ankL','kneeR','ankR','elbL','handL','elbR','handR'];
+  for (const q of pts) out[q] = add(c, rot(sub(J[q], c)));
+  out.fw = rot(J.fw); out.up = rot(J.up);
+  let mz = Infinity; for (const q of pts) mz = Math.min(mz, out[q].z - (q === 'headC' ? .1 * FH * J.k : .035 * FH));
+  const lift = -mz * T.tk; for (const q of pts) out[q] = add(out[q], v3(0, 0, lift));
+  return out;
 }
 /* den Hund streicheln: zum Hund drehen, bücken, Hand auf dem Rücken hin und her */
 function petPose(F, dt){
@@ -882,6 +986,8 @@ function step(F, dt){
     const ax = D.pvx == null ? 0 : (D.svx - D.pvx) * idt, ay = D.pvy == null ? 0 : (D.svy - D.pvy) * idt; D.pvx = D.svx; D.pvy = D.svy;
     F.sw = F.sw || { th: 0, om: 0, ph: 0, pom: 0 };
     swingStep(F, cl(ax, -6000, 6000), cl(ay, -6000, 6000), dt, true);
+  } else if (F.trick && !F.trick.wait && F.trick.kind !== 'pet') {
+    P = trickPose(F, dt);
   } else if (F.pickUp) {
     P = pickPose(F, dt);
   } else if (F.pet) {
@@ -908,10 +1014,10 @@ function step(F, dt){
     if (onTop) {
       /* oben: stehen, umschauen, dann an derselben Stelle rückwärts hinunter */
       F.topT = (F.topT || 0) + dt; if (F.leave) F.topWait = 0;
-      if (F.spot && !F.topGoal && !held && !F.leave && !F.sitDone && F.topT > .8) { F.sitDone = true; if (Math.random() < .55) F.sit = { t: 0, dur: 4 + Math.random() * 5, sp: F.spot, a0: F.a, x0: F.x, g0: F.g }; }
+      if (F.spot && !F.topGoal && !held && !F.leave && !F.trick && !F.sitDone && F.topT > .8) { F.sitDone = true; if (Math.random() < .55) F.sit = { t: 0, dur: 4 + Math.random() * 5, sp: F.spot, a0: F.a, x0: F.x, g0: F.g }; }
       if (F.topT > (F.topWait || 3) && F.spot && !F.topGoal && !F.sit && !held) { actFromPlan(F, F.spot, true); F.topT = 0; F.spot = null; }
     }
-    if (!onTop && !F.goal && !F.fetch && !held && !F.leave && !(F.enter > 0) && letters.spots.length && Math.random() < dt * .1) {
+    if (!onTop && !F.goal && !F.fetch && !F.trick && !held && !F.leave && !(F.enter > 0) && letters.spots.length && Math.random() < dt * .1) {
       /* nur Stellen mit freiem Weg, freiem Einstieg und einem Buchstaben, auf dem niemand ist */
       const sight = sp => { const dx = sp.S2.x - F.x, dg = sp.S2.g - F.g, n = Math.ceil(Math.hypot(dx, dg / C) / (FH * .15)); for (let k = 1; k <= n; k++) if (!clearAt(-1, F.x + dx * k / n, F.g + dg * k / n)) return false; return true; };
       const busy = sp => Fs.some(o => o !== F && (o.goal === sp || o.spot === sp || o.surf === sp.id || (o.spot && o.spot.id === sp.id) || (o.goal && o.goal.id === sp.id) || (o.act && (o.act.to === sp.id || o.act.from === sp.id)) || Math.hypot(o.x - sp.S.x, (o.g - sp.S.g) / C) < FH * .6 || Math.hypot(o.x - sp.S2.x, (o.g - sp.S2.g) / C) < FH * .5));
@@ -974,7 +1080,9 @@ function step(F, dt){
         if (F.stillT > .8) { let best = F.a, bn = -1; for (let k = 0; k < 16; k++) { const a2 = k * Math.PI / 8; let n = 0; for (const L of [.2, .4, .6, .8, 1]) { if (clear(F.x + Math.cos(a2) * L * FH, F.g + Math.sin(a2) * L * FH * C)) n++; else break; } if (n > bn) { bn = n; best = a2; } }
           F.escA = best; F.escT = 1.2; F.stillT = 0; F.goal = null; F.goalStage = 0; } }
       else F.stillT = 0;
-      const desired = F.fetch && !F.leave ? Math.atan2((F.fetch.g - F.g) / C, F.fetch.x - F.x) : F.leave ? (F.x < W / 2 ? Math.PI : 0) : F.enter > 0 ? (F.x < W / 2 ? 0 : Math.PI) : F.escT > 0 ? F.escA : F.goal ? Math.atan2((F.goal.S2.g - F.g) / C, F.goal.S2.x - F.x) : F.a + cl(turn, -4, 4) * dt;
+      const run = F.trick && F.trick.kind === 'pet' && !F.trick.wait && DOG ? petSpot(F) : null;
+      if (run) want *= 2.1;
+      const desired = run ? Math.atan2((run.g - F.g) / C, run.x - F.x) : F.fetch && !F.leave ? Math.atan2((F.fetch.g - F.g) / C, F.fetch.x - F.x) : F.leave ? (F.x < W / 2 ? Math.PI : 0) : F.enter > 0 ? (F.x < W / 2 ? 0 : Math.PI) : F.escT > 0 ? F.escA : F.goal ? Math.atan2((F.goal.S2.g - F.g) / C, F.goal.S2.x - F.x) : F.a + cl(turn, -4, 4) * dt;
       if (F.goal && F.escT <= 0) want *= cl(Math.hypot(F.goal.S2.x - F.x, (F.goal.S2.g - F.g) / C) / (FH * .7), .3, 1);
       let pick = null, da0 = 0;
       for (const da of [0, .35, -.35, .7, -.7, 1.1, -1.1, 1.6, -1.6, 2.2, -2.2, Math.PI]) {
@@ -992,7 +1100,7 @@ function step(F, dt){
       /* steht die Figur knapp an einer Wand (nach dem Klettern), darf sie sich wegbewegen */
       if (clear(nx, ng) || (idAt(nx, ng) === F.surf && (free(F.a) || (F.escT > 0 && clearAt(F.surf, nx, ng, .1))))) { F.x = nx; F.g = ng; }
       else F.sp *= .5;
-      if (!F.goal && !F.fetch && !F.leave && !(F.enter > 0) && Math.random() < dt * .05) F.pause = 1 + Math.random() * 2.5;
+      if (!F.goal && !F.fetch && !F.trick && !F.leave && !(F.enter > 0) && Math.random() < dt * .05) F.pause = 1 + Math.random() * 2.5;
     }
     if (DOG && F.surf < 0 && !F.goalStage) { const dx = F.x - DOG.x, dg = (F.g - DOG.g) / C, d = Math.hypot(dx, dg), m = FH * .34;
       if (d < m && d > .01) { const push = Math.min(m - d, FH * 1.5 * dt), px = F.x + dx / d * push, pg = F.g + dg / d * push * C; if (clear(px, pg)) { F.x = px; F.g = pg; } } }
@@ -1002,6 +1110,9 @@ function step(F, dt){
       if (d < m) { const k = d > .01 ? 1 / d : 0, push = Math.min(m - d, FH * 1.5 * dt), ux = d > .01 ? dx * k : Math.cos(F.seed), ug = d > .01 ? dg * k : Math.sin(F.seed);
         const px = F.x + ux * push, pg = F.g + ug * push * C; if (clear(px, pg)) { F.x = px; F.g = pg; } }
     }
+    /* beim Hund angekommen: streicheln */
+    { const T = F.trick; if (T && T.kind === 'pet' && !T.wait && DOG) { const p = petSpot(F), d = Math.hypot(p.x - F.x, (p.g - F.g) / C);
+      if (d < FH * .12 || (d < FH * .3 && T.t > 2 && (F.vs || 0) < .05)) { F.pet = { t: 0, dur: 3.4 }; T.petting = true; T.dur = T.t + 3.5; T.t0 = T.t; T.p0 = T.p; DOG.mode = 'pet'; DOG.t = 3.4; DOG.petF = F; F.sp = 0; } } }
     /* beim Haufen angekommen: bücken und aufheben */
     if (F.fetch) { F.fetchT += dt; const p = F.fetch, d = Math.hypot(p.x - F.x, (p.g - F.g) / C);
       if (!POOPS.includes(p)) F.fetch = null;
@@ -1038,11 +1149,13 @@ function render(dt){
   c.clearRect(0, 0, W, Hh);
   for (const F of Fs) {
     if (F.leave) F.pause = 0;
+    if (F.trick) trickTick(F, dt);
     const P = step(F, dt);
     if (F.sw && !F.drag) swingStep(F, 0, 0, dt, false);
-    const J = F.sw ? swingJ(solveFig(F, P), F.sw) : solveFig(F, P);
+    let J = F.sw ? swingJ(solveFig(F, P), F.sw) : solveFig(F, P);
+    if (F.trick && F.trick.th != null) J = rollJ(J, F.trick);
     F.lastJ = J;
-    const base = { x: F.x, gy: F.g, z: baseZ(F) + (F.dropZ || 0) * FH };
+    const base = { x: F.x, gy: F.g, z: baseZ(F) + ((F.dropZ || 0) + (F.hop || 0)) * FH };
     F.base = base;
     if (F.flyHide) continue;
     figTo3D(F, J, base);
@@ -1085,7 +1198,7 @@ function render(dt){
   for (const F of Fs) {
     const b = F.box; if (!b || F.flyHide) continue;
     const name = F.i === S.me ? 'You' : S.claims[F.i];
-    let y = b.head[1] - 2;
+    let y = Math.min(b.head[1], b.y0 + FH * .12) - 2;
     if (view === 'lobby' && S.draws[S.me] == null && eligible().includes(F.i)) {
       const hop = Math.sin(clock * 4 + F.seed) * 2 - (F.hit ? 6 : 0), s2 = (F.hit ? 1.5 : 1) * (desk() ? 1.2 : 1);
       drawGift(c, b.head[0], y - 10 + hop, 9 * s2); y -= 24 * s2;
@@ -1193,19 +1306,22 @@ function setView(v, quiet){
   $('scroll').hidden = v !== 'pick' || !open;
   $('info').hidden = v !== 'pick' && v !== 'lobby';
   $('drawBtn').hidden = v !== 'lobby' || open;
+  $('acts').hidden = v !== 'lobby' || !open;
   if (v === 'pick') say(!open ? 'Registration is closed. Already in? Tap your figure.' : sel == null ? 'Choose your avatar. Tap a black figure.' + cd : DOTS + "Nice pick. Let's give it your name");
   if (v === 'name') { $('nameForm').hidden = false; $('pinBox').hidden = true; $('nameStage').classList.remove('pin'); say('Enter your name.'); setTimeout(() => $('nameIn').focus(), RM ? 0 : 700); }
   if (v === 'code') { say('Enter your code.'); setTimeout(() => $('codeIn').focus(), RM ? 0 : 700); }
   if (v === 'lobby') {
     const mine = S.draws[S.me];
     $('drawBtn').textContent = mine != null ? 'See my draw' : 'Draw';
-    if (open) say("You're in. The draw opens on 1 December at 12:00.");
+    if (open) say("You're in. The draw opens on 1 December at 12:00. You can play with your avatar in the meantime.");
     else say(mine != null ? "You've already drawn." : 'Registration is closed. Everyone with a gift is in the pot. Tap Draw.');
   }
   if (v === 'result') say('Psst. Keep it to yourself.');
   tickCd();
   $('scroll').classList.toggle('ready', sel != null);
+  measureFoot();
 }
+function measureFoot(){ requestAnimationFrame(() => { const el = [...$('foot').children].find(e => !e.hidden && e.getBoundingClientRect().height); footTop = el ? el.getBoundingClientRect().top - 6 : 1e9; }); }
 function tap(F){
   if (view !== 'pick') return;
   if (!isOpen() && S.claims[F.i] == null) return;
@@ -1255,7 +1371,7 @@ cv.addEventListener('pointerdown', e => {
 cv.addEventListener('pointermove', e => {
   if (!drag) { const F = (view === 'pick' || view === 'lobby') && pick(e.clientX, e.clientY); cv.classList.toggle('grab', !!F); cv.classList.toggle('info', !F && (view === 'pick' || view === 'lobby') && (onInfo(e.clientX, e.clientY) || onDog(e.clientX, e.clientY))); return; }
   const F = drag.F;
-  if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 6) { drag.moved = true; F.act = null; F.lean = null; F.sit = null; F.fetch = null; F.pickUp = null; F.pet = null; F.topGoal = null; F.topPath = null; F.drag = { vx: 0 }; F.dropZ = 0; }
+  if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 6) { drag.moved = true; F.act = null; F.lean = null; F.sit = null; F.fetch = null; F.pickUp = null; F.pet = null; endTrick(F); F.topGoal = null; F.topPath = null; F.drag = { vx: 0 }; F.dropZ = 0; }
   if (!drag.moved) return;
   const nx = e.clientX + drag.ox;
   F.drag.vx = lerp(F.drag.vx, (nx - F.x) / .016, .3);
@@ -1324,6 +1440,14 @@ $('nameForm').addEventListener('submit', e => {
   }).finally(() => { busy = false; });
 });
 $('nameBack').addEventListener('click', back);
+/* Aktionstasten: schwarz solange die Figur spielt, der Balken läuft dabei leer */
+const ACTS = [...document.querySelectorAll('#acts button')];
+for (const b of ACTS) b.addEventListener('click', () => { if (view === 'lobby' && isOpen()) startTrick(b.dataset.k); });
+function showActs(){
+  const F = S.me != null ? fig(S.me) : null, T = F && F.trick;
+  for (const b of ACTS) { const on = !!T && T.kind === b.dataset.k, p = on ? T.p : 0;
+    if (b._p !== p) { b._p = p; b.style.setProperty('--p', p.toFixed(4)); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); } }
+}
 $('codeBack').addEventListener('click', back);
 $('pinOk').addEventListener('click', () => { sel = null; setView('lobby'); startFly('out', [{ F: fig(S.me), wave: true }], $('nameC')); });
 $('codeForm').addEventListener('submit', e => {
@@ -1387,9 +1511,10 @@ function loop(t){
   if (view === 'code' && sel != null) drawBig($('codeC'), [{ F: fig(sel), wave: true }]);
   if (view === 'result') drawBig($('resC'), [{ F: fig(S.me), wave: false, turn: -.35 }, { F: fig(S.draws[S.me]), wave: true, turn: .35 }]);
   drawFly(dt);
+  if (view === 'lobby') showActs();
   requestAnimationFrame(loop);
 }
-let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (innerWidth >= 50 && innerHeight >= 50) build(); }, 200); });
+let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (innerWidth >= 50 && innerHeight >= 50) build(); measureFoot(); }, 200); });
 /* Start: Schrift laden, Stand vom Server holen; danach alle paar Sekunden nachfragen, solange die Seite sichtbar ist */
 const firstLoad = () => refresh().catch(() => new Promise(r => setTimeout(r, 2500)).then(firstLoad));
 say('One moment …');
