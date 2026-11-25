@@ -1350,13 +1350,15 @@ function loop(t){
   drawFly(dt);
   requestAnimationFrame(loop);
 }
-let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(build, 200); });
+let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (innerWidth >= 50 && innerHeight >= 50) build(); }, 200); });
 /* Start: Schrift laden, Stand vom Server holen; danach alle paar Sekunden nachfragen, solange die Seite sichtbar ist */
 const firstLoad = () => refresh().catch(() => new Promise(r => setTimeout(r, 2500)).then(firstLoad));
 say('One moment …');
 Promise.all([document.fonts ? document.fonts.load('700 100px Jost').catch(() => {}) : null, firstLoad()]).then(() => {
   wasOpen = isOpen(); updateMyCode();
-  build(); setView(S.me != null ? 'lobby' : 'pick'); requestAnimationFrame(loop);
+  /* manche eingebetteten Browser melden beim Start kurz keine Grösse: dann auf die erste echte Grösse warten */
+  const go = () => { if (innerWidth < 50 || innerHeight < 50) { setTimeout(go, 200); return; } build(); setView(S.me != null ? 'lobby' : 'pick'); requestAnimationFrame(loop); };
+  go();
   setInterval(() => { if (document.visibilityState === 'visible' && (view === 'pick' || view === 'lobby') && !busy) refresh().then(syncFigs).catch(() => {}); }, 12000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refresh().then(syncFigs).catch(() => {}); });
 });
