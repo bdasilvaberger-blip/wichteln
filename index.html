@@ -22,7 +22,8 @@ body{background:var(--w);color:var(--k);font:400 16px/1.5 "Jost","Futura","Centu
 #cd{position:fixed;top:max(10px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:9;margin:0;padding:10px 20px;border:1.5px solid var(--k);border-radius:999px;background:var(--w);color:var(--k);font-size:15px;line-height:1.2;white-space:nowrap;font-variant-numeric:tabular-nums;pointer-events:none}
 #cd b{font-weight:500}
 @media(min-width:1024px){#cd{font-size:18px;padding:12px 26px}}
-#info{position:fixed;z-index:6;background:transparent;border:0;padding:0;cursor:pointer;border-radius:12px}
+#info{position:fixed;z-index:6;background:transparent;border:0;padding:0;border-radius:12px;pointer-events:none}
+#cv.info{cursor:pointer}
 #info:focus-visible{outline:2px solid var(--k);outline-offset:2px}
 #info[hidden]{display:none}
 #faq{border:1.5px solid var(--k);border-radius:22px;padding:26px 24px 22px;max-width:min(380px,calc(100vw - 32px));width:100%;color:var(--k);background:var(--w)}
@@ -186,7 +187,7 @@ function spline(keys, k, get){
 }
 
 /* ---------- Canvas ---------- */
-const GLYPHS = {"0":{"w":58.2,"h":72.6,"c":[["M",-12.8,0],["L",-12.8,0],["Q",-12.8,-4.9,-11.9,-9],["Q",-11,-13,-9.3,-15.8],["Q",-7.6,-18.7,-5.2,-20.2],["Q",-2.9,-21.8,0,-21.8],["L",0,-21.8],["Q",2.9,-21.8,5.3,-20.2],["Q",7.6,-18.7,9.3,-15.8],["Q",11,-13,11.9,-9],["Q",12.8,-4.9,12.8,0],["L",12.8,0],["Q",12.8,4.9,11.9,9],["Q",11,13,9.3,15.8],["Q",7.6,18.7,5.3,20.3],["Q",2.9,21.8,0,21.8],["L",0,21.8],["Q",-2.9,21.8,-5.2,20.3],["Q",-7.6,18.7,-9.3,15.8],["Q",-11,13,-11.9,9],["Q",-12.8,4.9,-12.8,0],["M",-29.1,0],["L",-29.1,0],["Q",-29.1,11.4,-25.5,19.5],["Q",-21.8,27.6,-15.2,32],["Q",-8.6,36.3,0,36.3],["L",0,36.3],["Q",9,36.3,15.5,32],["Q",22,27.6,25.6,19.5],["Q",29.1,11.4,29.1,0],["L",29.1,0],["Q",29.1,-11.4,25.6,-19.5],["Q",22,-27.6,15.5,-31.9],["Q",9,-36.3,0,-36.3],["L",0,-36.3],["Q",-8.6,-36.3,-15.2,-31.9],["Q",-21.8,-27.6,-25.5,-19.5],["Q",-29.1,-11.4,-29.1,0]]},"2":{"w":59.3,"h":71.4,"c":[["M",1.6,3.4],["L",-29.6,35.7],["L",29.7,35.7],["L",29.7,20.2],["L",1.7,20.2],["L",18,5.6],["Q",22.5,1.7,25.3,-3],["Q",28.1,-7.8,28.1,-13.5],["L",28.1,-13.5],["Q",28.1,-17.5,26.4,-21.4],["Q",24.7,-25.3,21.3,-28.5],["Q",18,-31.8,13,-33.7],["Q",8,-35.7,1.4,-35.7],["L",1.4,-35.7],["Q",-7.5,-35.7,-13.8,-32],["Q",-20,-28.3,-23.2,-22.1],["Q",-26.2,-15.9,-26.2,-8.4],["L",-26.2,-8.4],["L",-9.7,-8.4],["Q",-9.7,-12.2,-8.4,-15.1],["Q",-7.2,-18,-4.7,-19.6],["Q",-2.2,-21.2,0.9,-21.2],["L",0.9,-21.2],["Q",3.3,-21.2,5.2,-20.5],["Q",7,-19.7,8.2,-18.5],["Q",9.3,-17.2,10,-15.6],["Q",10.6,-14,10.6,-12.4],["L",10.6,-12.4],["Q",10.6,-9.6,9.5,-7.1],["Q",8.5,-4.7,6.4,-2.2],["Q",4.3,0.3,1.6,3.4],["L",1.6,3.4]]},"6":{"w":56.9,"h":71.3,"c":[["M",21.3,-35.6],["L",-0.1,-35.6],["L",-20.3,-9.9],["Q",-23.7,-5.7,-26.1,-0.9],["Q",-28.4,3.9,-28.4,9.5],["L",-28.4,9.5],["Q",-28.4,18.1,-24.6,23.9],["Q",-20.7,29.8,-14.3,32.7],["Q",-7.9,35.7,0,35.7],["L",0,35.7],["Q",7.9,35.7,14.3,32.7],["Q",20.8,29.8,24.6,23.9],["Q",28.5,18.1,28.5,9.5],["L",28.5,9.5],["Q",28.5,4.2,26.6,0],["Q",24.8,-4.2,21.6,-7.2],["Q",18.5,-10.1,14.6,-11.7],["Q",10.8,-13.2,6.9,-13.2],["L",6.9,-13.2],["Q",3,-13.2,0.5,-12.4],["L",0.5,-12.4],["L",21.3,-35.6],["M",-11.7,9.5],["L",-11.7,9.5],["Q",-11.7,6,-10.2,3.3],["Q",-8.7,0.6,-6,-0.9],["Q",-3.4,-2.4,0,-2.4],["L",0,-2.4],["Q",3.4,-2.4,6,-0.9],["Q",8.6,0.6,10.2,3.3],["Q",11.8,6,11.8,9.5],["L",11.8,9.5],["Q",11.8,13.1,10.2,15.7],["Q",8.6,18.4,6,19.8],["Q",3.4,21.3,0,21.3],["L",0,21.3],["Q",-3.4,21.3,-6,19.8],["Q",-8.7,18.4,-10.2,15.7],["Q",-11.7,13.1,-11.7,9.5]]},"W":{"w":105.7,"h":77.6,"c":[["M",32.7,-35.3],["L",19.2,4.6],["L",-0.1,-38.8],["L",-19.1,4.6],["L",-32.9,-35.3],["L",-52.9,-35.3],["L",-22.6,38.8],["L",-0.1,-3.4],["L",22.5,38.8],["L",52.9,-35.3],["L",32.7,-35.3]]},"I":{"w":17.2,"h":70,"c":[["M",8.6,-35],["L",-8.6,-35],["L",-8.6,35],["L",8.6,35],["L",8.6,-35]]},"C":{"w":60.3,"h":73.2,"c":[["M",-11.8,0],["L",-11.8,0],["Q",-11.8,-6.5,-8.9,-11.1],["Q",-6,-15.7,-1.2,-18.1],["Q",3.5,-20.5,9.3,-20.5],["L",9.3,-20.5],["Q",14.3,-20.5,18,-19.2],["Q",21.9,-18,24.9,-15.8],["Q",27.9,-13.7,30.2,-11.3],["L",30.2,-11.3],["L",30.2,-29.5],["Q",25.9,-32.8,20.9,-34.7],["Q",15.9,-36.6,8.3,-36.6],["L",8.3,-36.6],["Q",-0.2,-36.6,-7.3,-34],["Q",-14.3,-31.4,-19.5,-26.5],["Q",-24.6,-21.6,-27.4,-14.9],["Q",-30.2,-8.2,-30.2,0],["L",-30.2,0],["Q",-30.2,8.2,-27.4,14.9],["Q",-24.6,21.6,-19.5,26.5],["Q",-14.3,31.4,-7.3,34],["Q",-0.2,36.6,8.3,36.6],["L",8.3,36.6],["Q",15.9,36.6,20.9,34.7],["Q",25.9,32.8,30.2,29.5],["L",30.2,29.5],["L",30.2,11.3],["Q",27.9,13.7,24.9,15.8],["Q",21.9,17.9,18,19.2],["Q",14.3,20.5,9.3,20.5],["L",9.3,20.5],["Q",3.5,20.5,-1.2,18.1],["Q",-6,15.7,-8.9,11.1],["Q",-11.8,6.4,-11.8,0]]},"H":{"w":63.9,"h":70,"c":[["M",31.9,-35],["L",15.1,-35],["L",15.1,-9.5],["L",-15,-9.5],["L",-15,-35],["L",-31.9,-35],["L",-31.9,35],["L",-15,35],["L",-15,5.7],["L",15.1,5.7],["L",15.1,35],["L",31.9,35],["L",31.9,-35]]},"T":{"w":55.4,"h":70,"c":[["M",-27.7,-35],["L",-27.7,-19.9],["L",-8.5,-19.9],["L",-8.5,35],["L",8.4,35],["L",8.4,-19.9],["L",27.7,-19.9],["L",27.7,-35],["L",-27.7,-35]]},"E":{"w":46.5,"h":70,"c":[["M",23.3,-35],["L",-23.2,-35],["L",-23.2,35],["L",23.3,35],["L",23.3,21.1],["L",-7,21.1],["L",-7,5],["L",21.3,5],["L",21.3,-8.6],["L",-7,-8.6],["L",-7,-21.1],["L",23.3,-21.1],["L",23.3,-35]]},"L":{"w":45,"h":70,"c":[["M",-5.6,-35],["L",-22.5,-35],["L",-22.5,35],["L",22.5,35],["L",22.5,20.5],["L",-5.6,20.5],["L",-5.6,-35]]},"N":{"w":64.6,"h":77,"c":[["M",32.3,-35],["L",16,-35],["L",16,4.4],["L",-32.3,-38.5],["L",-32.3,35],["L",-16.1,35],["L",-16.1,-4.4],["L",32.3,38.5],["L",32.3,-35]]}};
+const GLYPHS = {"i":{"w":17.6,"h":101.4,"c":[["M",-8.8,-42.6],["L",-8.8,-42.6],["Q",-8.8,-39.0,-6.2,-36.7],["Q",-3.6,-34.4,0,-34.4],["L",0,-34.4],["Q",3.7,-34.4,6.3,-36.7],["Q",8.8,-39.0,8.8,-42.6],["L",8.8,-42.6],["Q",8.8,-46.2,6.3,-48.4],["Q",3.7,-50.7,0,-50.7],["L",0,-50.7],["Q",-3.6,-50.7,-6.2,-48.4],["Q",-8.8,-46.2,-8.8,-42.6],["M",7.3,4.7],["L",-7.3,4.7],["L",-7.3,50.7],["L",7.3,50.7],["L",7.3,4.7]]},"0":{"w":58.2,"h":72.6,"c":[["M",-12.8,0],["L",-12.8,0],["Q",-12.8,-4.9,-11.9,-9],["Q",-11,-13,-9.3,-15.8],["Q",-7.6,-18.7,-5.2,-20.2],["Q",-2.9,-21.8,0,-21.8],["L",0,-21.8],["Q",2.9,-21.8,5.3,-20.2],["Q",7.6,-18.7,9.3,-15.8],["Q",11,-13,11.9,-9],["Q",12.8,-4.9,12.8,0],["L",12.8,0],["Q",12.8,4.9,11.9,9],["Q",11,13,9.3,15.8],["Q",7.6,18.7,5.3,20.3],["Q",2.9,21.8,0,21.8],["L",0,21.8],["Q",-2.9,21.8,-5.2,20.3],["Q",-7.6,18.7,-9.3,15.8],["Q",-11,13,-11.9,9],["Q",-12.8,4.9,-12.8,0],["M",-29.1,0],["L",-29.1,0],["Q",-29.1,11.4,-25.5,19.5],["Q",-21.8,27.6,-15.2,32],["Q",-8.6,36.3,0,36.3],["L",0,36.3],["Q",9,36.3,15.5,32],["Q",22,27.6,25.6,19.5],["Q",29.1,11.4,29.1,0],["L",29.1,0],["Q",29.1,-11.4,25.6,-19.5],["Q",22,-27.6,15.5,-31.9],["Q",9,-36.3,0,-36.3],["L",0,-36.3],["Q",-8.6,-36.3,-15.2,-31.9],["Q",-21.8,-27.6,-25.5,-19.5],["Q",-29.1,-11.4,-29.1,0]]},"2":{"w":59.3,"h":71.4,"c":[["M",1.6,3.4],["L",-29.6,35.7],["L",29.7,35.7],["L",29.7,20.2],["L",1.7,20.2],["L",18,5.6],["Q",22.5,1.7,25.3,-3],["Q",28.1,-7.8,28.1,-13.5],["L",28.1,-13.5],["Q",28.1,-17.5,26.4,-21.4],["Q",24.7,-25.3,21.3,-28.5],["Q",18,-31.8,13,-33.7],["Q",8,-35.7,1.4,-35.7],["L",1.4,-35.7],["Q",-7.5,-35.7,-13.8,-32],["Q",-20,-28.3,-23.2,-22.1],["Q",-26.2,-15.9,-26.2,-8.4],["L",-26.2,-8.4],["L",-9.7,-8.4],["Q",-9.7,-12.2,-8.4,-15.1],["Q",-7.2,-18,-4.7,-19.6],["Q",-2.2,-21.2,0.9,-21.2],["L",0.9,-21.2],["Q",3.3,-21.2,5.2,-20.5],["Q",7,-19.7,8.2,-18.5],["Q",9.3,-17.2,10,-15.6],["Q",10.6,-14,10.6,-12.4],["L",10.6,-12.4],["Q",10.6,-9.6,9.5,-7.1],["Q",8.5,-4.7,6.4,-2.2],["Q",4.3,0.3,1.6,3.4],["L",1.6,3.4]]},"6":{"w":56.9,"h":71.3,"c":[["M",21.3,-35.6],["L",-0.1,-35.6],["L",-20.3,-9.9],["Q",-23.7,-5.7,-26.1,-0.9],["Q",-28.4,3.9,-28.4,9.5],["L",-28.4,9.5],["Q",-28.4,18.1,-24.6,23.9],["Q",-20.7,29.8,-14.3,32.7],["Q",-7.9,35.7,0,35.7],["L",0,35.7],["Q",7.9,35.7,14.3,32.7],["Q",20.8,29.8,24.6,23.9],["Q",28.5,18.1,28.5,9.5],["L",28.5,9.5],["Q",28.5,4.2,26.6,0],["Q",24.8,-4.2,21.6,-7.2],["Q",18.5,-10.1,14.6,-11.7],["Q",10.8,-13.2,6.9,-13.2],["L",6.9,-13.2],["Q",3,-13.2,0.5,-12.4],["L",0.5,-12.4],["L",21.3,-35.6],["M",-11.7,9.5],["L",-11.7,9.5],["Q",-11.7,6,-10.2,3.3],["Q",-8.7,0.6,-6,-0.9],["Q",-3.4,-2.4,0,-2.4],["L",0,-2.4],["Q",3.4,-2.4,6,-0.9],["Q",8.6,0.6,10.2,3.3],["Q",11.8,6,11.8,9.5],["L",11.8,9.5],["Q",11.8,13.1,10.2,15.7],["Q",8.6,18.4,6,19.8],["Q",3.4,21.3,0,21.3],["L",0,21.3],["Q",-3.4,21.3,-6,19.8],["Q",-8.7,18.4,-10.2,15.7],["Q",-11.7,13.1,-11.7,9.5]]},"W":{"w":105.7,"h":77.6,"c":[["M",32.7,-35.3],["L",19.2,4.6],["L",-0.1,-38.8],["L",-19.1,4.6],["L",-32.9,-35.3],["L",-52.9,-35.3],["L",-22.6,38.8],["L",-0.1,-3.4],["L",22.5,38.8],["L",52.9,-35.3],["L",32.7,-35.3]]},"I":{"w":17.2,"h":70,"c":[["M",8.6,-35],["L",-8.6,-35],["L",-8.6,35],["L",8.6,35],["L",8.6,-35]]},"C":{"w":60.3,"h":73.2,"c":[["M",-11.8,0],["L",-11.8,0],["Q",-11.8,-6.5,-8.9,-11.1],["Q",-6,-15.7,-1.2,-18.1],["Q",3.5,-20.5,9.3,-20.5],["L",9.3,-20.5],["Q",14.3,-20.5,18,-19.2],["Q",21.9,-18,24.9,-15.8],["Q",27.9,-13.7,30.2,-11.3],["L",30.2,-11.3],["L",30.2,-29.5],["Q",25.9,-32.8,20.9,-34.7],["Q",15.9,-36.6,8.3,-36.6],["L",8.3,-36.6],["Q",-0.2,-36.6,-7.3,-34],["Q",-14.3,-31.4,-19.5,-26.5],["Q",-24.6,-21.6,-27.4,-14.9],["Q",-30.2,-8.2,-30.2,0],["L",-30.2,0],["Q",-30.2,8.2,-27.4,14.9],["Q",-24.6,21.6,-19.5,26.5],["Q",-14.3,31.4,-7.3,34],["Q",-0.2,36.6,8.3,36.6],["L",8.3,36.6],["Q",15.9,36.6,20.9,34.7],["Q",25.9,32.8,30.2,29.5],["L",30.2,29.5],["L",30.2,11.3],["Q",27.9,13.7,24.9,15.8],["Q",21.9,17.9,18,19.2],["Q",14.3,20.5,9.3,20.5],["L",9.3,20.5],["Q",3.5,20.5,-1.2,18.1],["Q",-6,15.7,-8.9,11.1],["Q",-11.8,6.4,-11.8,0]]},"H":{"w":63.9,"h":70,"c":[["M",31.9,-35],["L",15.1,-35],["L",15.1,-9.5],["L",-15,-9.5],["L",-15,-35],["L",-31.9,-35],["L",-31.9,35],["L",-15,35],["L",-15,5.7],["L",15.1,5.7],["L",15.1,35],["L",31.9,35],["L",31.9,-35]]},"T":{"w":55.4,"h":70,"c":[["M",-27.7,-35],["L",-27.7,-19.9],["L",-8.5,-19.9],["L",-8.5,35],["L",8.4,35],["L",8.4,-19.9],["L",27.7,-19.9],["L",27.7,-35],["L",-27.7,-35]]},"E":{"w":46.5,"h":70,"c":[["M",23.3,-35],["L",-23.2,-35],["L",-23.2,35],["L",23.3,35],["L",23.3,21.1],["L",-7,21.1],["L",-7,5],["L",21.3,5],["L",21.3,-8.6],["L",-7,-8.6],["L",-7,-21.1],["L",23.3,-21.1],["L",23.3,-35]]},"L":{"w":45,"h":70,"c":[["M",-5.6,-35],["L",-22.5,-35],["L",-22.5,35],["L",22.5,35],["L",22.5,20.5],["L",-5.6,20.5],["L",-5.6,-35]]},"N":{"w":64.6,"h":77,"c":[["M",32.3,-35],["L",16,-35],["L",16,4.4],["L",-32.3,-38.5],["L",-32.3,35],["L",-16.1,35],["L",-16.1,-4.4],["L",32.3,38.5],["L",32.3,-35]]}};
 /* Glyphe als Pfad, Grösse 100 auf fs skaliert, y nach unten */
 function glyphPath(ch, fs){
   const k = fs / 100, p = new Path2D();
@@ -270,16 +271,22 @@ function buildLetters(){
       for (const q of comp) L.ids[q] = fill;
     }
   }
-  /* Info Zeichen: ein pinkes i, aufrecht wie ein Schild, an einem freien Platz; niemand läuft hindurch */
+  /* Info Zeichen: ein pinkes i, gebaut wie die anderen Buchstaben, an einem freien Platz */
   {
-    const w = FH * .22, rd = FH * .14, len = FH * .8, gap = FH * .2, dep = FH * .1, H = len + gap + rd * 2;
-    const half = Math.max(w / 2, rd);
-    const inside = (dx, dz, m) => Math.abs(dx) <= half + m && Math.abs(dz) <= dep / 2 + m;
-    const fits = (cx, cy) => { const m = FH * .55; for (let y = cy - (dep / 2 + m) * C; y <= cy + (dep / 2 + m) * C; y += 2) for (let x = cx - half - m; x <= cx + half + m; x += 2) { const X = Math.round(x), Y = Math.round(y); if (X < 0 || Y < 0 || X >= W || Y >= Hh || L.ids[Y * W + X] !== 0) return false; } return cy - H * HZ > top() - FH * .5; };
-    const cand = []; for (let fy = .98; fy >= .5; fy -= .05) for (const fx of [.93, .07, .82, .18, .5, .7, .3]) cand.push([W * fx, top() + (bottom() - top()) * fy]);
-    const at = cand.find(([x, y]) => fits(x, y)) || [W * .93, bottom() - FH * .4];
-    L.info = { x: at[0], gy: at[1], w, len, rd, gap, H, dep, half };
-    for (let y = Math.max(0, Math.floor(at[1] - (dep / 2 + 3) * C)); y <= Math.min(Hh - 1, Math.ceil(at[1] + (dep / 2 + 3) * C)); y++) for (let x = Math.max(0, Math.floor(at[0] - half - 3)); x <= Math.min(W - 1, Math.ceil(at[0] + half + 3)); x++) L.ids[y * W + x] = 255;
+    const gw = GLYPHS.i.w * fs / 100, gh = GLYPHS.i.h * fs / 100, m = FH * .7;
+    const fits = (cx, cy) => { for (let y = cy - (gh / 2 + m) * C; y <= cy + (gh / 2 + m) * C; y += 2) for (let x = cx - gw / 2 - m; x <= cx + gw / 2 + m; x += 2) { const X = Math.round(x), Y = Math.round(y); if (X < 0 || Y < 0 || X >= W || Y >= Hh || L.ids[Y * W + X] !== 0) return false; } return true; };
+    const cand = []; for (let fy = .95; fy >= .4; fy -= .05) for (const fx of [.93, .07, .82, .18, .5, .7, .3]) cand.push([W * fx, top() + FH * 1.1 + (bottom() - top() - FH * 1.6) * fy]);
+    const at = cand.find(([x, y]) => fits(x, y));
+    if (at) {
+      const H = Math.round(Math.min(FH * .6, fs * .35)), id = L.G.length + 1;
+      L.G.push({ ch: 'i', x: at[0], gy: at[1], rot: 0, H, E: H * HZ, info: true });
+      const ic = document.createElement('canvas'); ic.width = W; ic.height = Hh; const ix2 = ic.getContext('2d', { willReadFrequently: true });
+      ix2.translate(at[0], at[1]); ix2.scale(1, C); ix2.fillStyle = '#f00'; ix2.fill(glyphPath('i', fs));
+      const x0 = Math.max(0, Math.floor(at[0] - gw)), x1 = Math.min(W, Math.ceil(at[0] + gw)), y0 = Math.max(0, Math.floor(at[1] - gh * C)), y1 = Math.min(Hh, Math.ceil(at[1] + gh * C));
+      const dd = ix2.getImageData(x0, y0, x1 - x0, y1 - y0).data;
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (dd[((y - y0) * (x1 - x0) + x - x0) * 4 + 3] === 255) L.ids[y * W + x] = id;
+      L.info = { x: at[0], gy: at[1], gw, gh, H };
+    } else L.info = null;
   }
   /* Nischen sperren: morphologisches Schliessen je Buchstabe, nur was dazukommt */
   const r = Math.round(FH * .3);
@@ -305,24 +312,18 @@ function buildLetters(){
     const closed = pass(pass(m, true), false);
     for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) { const p = (y + by) * W + x + bx; if (closed[y * bw + x] && L.ids[p] === 0) L.ids[p] = 255; }
   });
-  /* Info Schild in 3D: Strich und Punkt, aufrecht, zur Kamera gedreht */
-  if (GL.info) { GL.scene.remove(GL.info); GL.info.geometry.dispose(); }
-  { const I = L.info, sh = [];
-    const st = new THREE.Shape(); st.moveTo(-I.w / 2, 0); st.lineTo(I.w / 2, 0); st.lineTo(I.w / 2, I.len); st.lineTo(-I.w / 2, I.len); st.lineTo(-I.w / 2, 0); sh.push(st);
-    const dot = new THREE.Shape(); dot.absarc(0, I.len + I.gap + I.rd, I.rd, 0, Math.PI * 2, false); sh.push(dot);
-    const geo = new THREE.ExtrudeGeometry(sh, { depth: I.dep, bevelEnabled: false, curveSegments: 24 }); geo.translate(0, 0, -I.dep / 2);
-    GL.info = new THREE.Mesh(geo, GL.mat[4]); GL.info.position.set(I.x - W / 2, 0, (I.gy - Hh / 2) / C); GL.scene.add(GL.info);
-    /* unsichtbarer Knopf genau darüber, für Maus, Finger und Tastatur */
-    const b = $('info'), top_ = I.gy - (I.dep / 2) * C - I.H * HZ, bot = I.gy + I.dep / 2 * C;
-    Object.assign(b.style, { left: (I.x - I.half - 10) + 'px', top: (top_ - 10) + 'px', width: (I.half * 2 + 20) + 'px', height: (bot - top_ + 20) + 'px' });
-  }
+  /* Knopf für die Tastatur über dem Info Zeichen; Klicks kommen über den Platz */
+  { const I = L.info, b = $('info');
+    if (I) { const top_ = I.gy - I.gh / 2 * C - I.H * HZ, bot = I.gy + I.gh / 2 * C;
+      Object.assign(b.style, { display: '', left: (I.x - I.gw / 2 - 10) + 'px', top: (top_ - 10) + 'px', width: (I.gw + 20) + 'px', height: (bot - top_ + 20) + 'px' }); }
+    else b.style.display = 'none'; }
   /* 3D Blöcke aus den Vektorformen der Schrift */
   for (const m of GL.letters) { GL.scene.remove(m); m.geometry.dispose(); m.children.forEach(c => c.geometry.dispose()); }
   GL.letters = L.G.map(g => {
     const shapes = glyphShapes(g.ch, fs);
     const geo = new THREE.ExtrudeGeometry(shapes, { depth: g.H, bevelEnabled: false, curveSegments: 14 });
     geo.rotateX(-Math.PI / 2);
-    const m = new THREE.Mesh(geo, GL.mat[0]);
+    const m = new THREE.Mesh(geo, GL.mat[g.info ? 4 : 0]);
     /* Innenräume (0, 6) oben zudecken: nur die Öffnung als Linie, keine Innenwände */
     const holes = []; shapes.forEach(sh => sh.holes.forEach(h => holes.push(new THREE.Shape(h.getPoints()))));
     if (holes.length) { const cg = new THREE.ShapeGeometry(holes, 14); cg.rotateX(-Math.PI / 2); cg.translate(0, g.H + .2, 0); m.add(new THREE.Mesh(cg, GL.mat[3])); }
@@ -1306,18 +1307,26 @@ function tap(F){
   sel = F.i; F.pause = 0; setView('pick');
 }
 
+/* Info Zeichen getroffen? Genau auf der Form, oben oder an der Seite */
+function onInfo(x, y){
+  const I = letters.info; if (!I) return false;
+  const id = letters.G.findIndex(g => g.info);
+  for (let z = 0; z <= I.H; z += 2) if (idAt(x, y + z * HZ) === id) return true;
+  return false;
+}
 /* Ziehen und Antippen */
 let drag = null;
 const pick = (x, y) => [...Fs].sort((a, b) => b.g - a.g).find(F => F.box && x >= F.box.x0 - 12 && x <= F.box.x1 + 12 && y >= F.box.y0 - 12 && y <= F.box.y1 + 12);
 cv.addEventListener('pointerdown', e => {
   if (view !== 'pick' && view !== 'lobby') return;
-  const F = pick(e.clientX, e.clientY); if (!F) return;
+  const F = pick(e.clientX, e.clientY);
+  if (!F) { if (onInfo(e.clientX, e.clientY)) $('faq').showModal(); return; }
   cv.setPointerCapture(e.pointerId);
   drag = { F, sx: e.clientX, sy: e.clientY, moved: false, ox: F.x - e.clientX, og: F.g - e.clientY };
   cv.classList.add('grabbing');
 });
 cv.addEventListener('pointermove', e => {
-  if (!drag) { const F = (view === 'pick' || view === 'lobby') && pick(e.clientX, e.clientY); cv.classList.toggle('grab', !!F); return; }
+  if (!drag) { const F = (view === 'pick' || view === 'lobby') && pick(e.clientX, e.clientY); cv.classList.toggle('grab', !!F); cv.classList.toggle('info', !F && (view === 'pick' || view === 'lobby') && onInfo(e.clientX, e.clientY)); return; }
   const F = drag.F;
   if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 6) { drag.moved = true; F.act = null; F.lean = null; F.sit = null; F.fetch = null; F.pickUp = null; F.topGoal = null; F.topPath = null; F.drag = { vx: 0 }; F.dropZ = 0; }
   if (!drag.moved) return;
