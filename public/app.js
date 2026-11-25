@@ -15,7 +15,7 @@ let ID = null; try { ID = JSON.parse(localStorage.getItem(IDK)); } catch (e) {}
 if (!ID || typeof ID.token !== 'string' || !Number.isInteger(ID.fig)) ID = null;
 const saveId = () => { try { ID ? localStorage.setItem(IDK, JSON.stringify(ID)) : localStorage.removeItem(IDK); } catch (e) {} };
 async function api(path, body){
-  const r = await fetch('api/' + path, body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store' } : { cache: 'no-store' });
+  const r = await fetch('/wichteln26/api/' + path, body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store' } : { cache: 'no-store' });
   let d = null; try { d = await r.json(); } catch (e) {}
   if (!r.ok) { const err = new Error((d && d.error) || 'No connection. Please try again in a moment.'); err.status = r.status; throw err; }
   return d;

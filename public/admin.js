@@ -1,6 +1,6 @@
 const $ = id => document.getElementById(id);
 const call = async (path, body) => {
-  const r = await fetch('api/admin/' + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: $('key').value, ...body }), cache: 'no-store' });
+  const r = await fetch('/wichteln26/api/admin/' + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: $('key').value, ...body }), cache: 'no-store' });
   const d = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(d.error || 'Error');
   return d;

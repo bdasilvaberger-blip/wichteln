@@ -10,4 +10,4 @@ const handler = makeHandler({
 });
 
 export default handler;
-export const config = { path: '/api/*', method: ['GET', 'POST'] };
+export const config = { path: ['/api/*', '/wichteln26/api/*'], method: ['GET', 'POST'] };
