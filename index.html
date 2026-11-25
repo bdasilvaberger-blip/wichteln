@@ -345,6 +345,13 @@ function figTo3D(F, J, base){
   }
   addSph(P, j.pel, r * 1.15); addSph(P, j.neck, r * 1.15);
   addSph(P, j.headC, .1 * R * J.k);
+  F.cig = null;
+  if (F.lean && F.lean.smoke && F.lean.b > .3) {
+    const dir = add(mul(J.fw, .8), mul(J.rt, -.35)), dl = Math.hypot(dir.x, dir.y, dir.z) || 1;
+    const tipRel = add(J.handR, mul(dir, .08 * R / dl));
+    addCyl(P, j.handR, w(tipRel), r * .5);
+    F.cig = [base.x + tipRel.x, sy(base.gy, tipRel.y, tipRel.z + base.z)];
+  }
   /* Umriss für Antippen und Beschriftung */
   const P2 = p => [base.x + p.x, sy(base.gy, p.y, p.z + base.z)];
   const xs = [J.headC, J.handL, J.handR, J.ankL, J.ankR, J.shL, J.shR].map(P2);
@@ -406,20 +413,29 @@ function solveFig(F, P){
   const neck = add(chest, mul(spineUp, .045 * FH * k));
   const headC = add(neck, add(mul(spineUp, .085 * FH * k), mul(fw, .01 * FH)));
   const absP = p => p.abs ? p.abs : locA(p.r, p.f, p.z);
-  const hand = h => { const free = add(chest, loc(h.r, h.f, h.z - .78)); if (!h.g) return free;
-    const grab = locA(h.g.r, h.g.f, h.g.z); return add(mul(free, 1 - h.w), mul(grab, h.w)); };
-  const handL = hand(P.handL), handR = hand(P.handR);
+  const A1 = .165 * FH * k, A2 = .16 * FH * k;
+  const hand = (h, sh) => { const free = add(chest, loc(h.r, h.f, h.z - .78)); if (!h.g) return free;
+    const grab = locA(h.g.r, h.g.f, h.g.z);
+    /* erst hoch, dann über die Kante: so streift die Hand nie die Wand */
+    const d = sub(grab, free), dz = dot(d, up), dh = sub(d, mul(up, dz));
+    const at = w => { const wz = 1 - Math.pow(1 - w, 3), wf = w * w; return add(free, add(mul(dh, wf), mul(up, dz * wz))); };
+    /* reicht der Arm noch nicht bis zur Kante, bleibt die Hand dort, wo sie hinkommt, statt zur Wand gezogen zu werden */
+    let w = h.w; const reach = (A1 + A2) * .995;
+    if (h.pre && len(sub(at(w), sh)) > reach) { let lo = 0, hi = w; for (let i = 0; i < 12; i++) { const m = (lo + hi) / 2; if (len(sub(at(m), sh)) > reach) hi = m; else lo = m; } w = lo; }
+    return at(w); };
+  const handL = hand(P.handL, shL), handR = hand(P.handR, shR);
   const footL = absP(P.footL), footR = absP(P.footR);
-  const L1 = .25 * FH * k, L2 = .25 * FH * k, A1 = .165 * FH * k, A2 = .16 * FH * k;
+  const L1 = .25 * FH * k, L2 = .25 * FH * k;
   const ankL = add(footL, mul(up, .03 * FH)), ankR = add(footR, mul(up, .03 * FH));
   /* Knie: nach vorne, und wenn der Fuss hoch kommt nach oben; nie nach hinten umklappen */
   /* Knie: beim Gehen nach vorne; beim Klettern zur Seite und nach oben, nie in die Wand */
-  const kd = (kb, side) => add(add(mul(fw, 1 - .85 * kb), mul(rt, side * .95 * kb)), mul(up, .85 * (1 - kb) + .25 * kb));
+  const kd = (kb, side) => add(add(mul(fw, 1 - .85 * kb), mul(rt, side * .7 * kb)), mul(up, .85 * (1 - kb) + .25 * kb));
   /* zeitlich glätten: das Knie bleibt auf der Seite, auf der es im letzten Bild war */
   const coh = (d, prev) => prev ? add(mul(nrm(d), .45), mul(prev, .55)) : d;
   const kL = ik(hipL, ankL, L1, L2, coh(kd(P.kneeBackL || 0, 1), F.kpL)), kR = ik(hipR, ankR, L1, L2, coh(kd(P.kneeBackR || 0, -1), F.kpR));
   if (!P.noKeep) { F.kpL = nrm(sub(kL.j, hipL)); F.kpR = nrm(sub(kR.j, hipR)); }
-  const elbBend = P.armsUp ? add(mul(fw, -.3), mul(up, -.6)) : add(mul(fw, -1), mul(up, -.2));
+  /* beim Klettern zeigen die Ellbogen von der Wand weg, nie hinein */
+  const elbBend = P.armsUp ? add(mul(fw, -1), mul(up, .6)) : add(mul(fw, -1), mul(up, -.2));
   const eL = ik(shL, handL, A1, A2, add(elbBend, mul(rt, .4))), eR = ik(shR, handR, A1, A2, add(elbBend, mul(rt, -.4)));
   return { fw, rt, up, pel, chest, shL, shR, hipL, hipR, neck, headC, kneeL: kL.j, ankL: kL.end, kneeR: kR.j, ankR: kR.end,
     elbL: eL.j, handL: eL.end, elbR: eR.j, handR: eR.end, toeL: P.footL.toe || 0, toeR: P.footR.toe || 0, k, bw };
@@ -470,12 +486,12 @@ const UP_KEYS = (H, fEnd) => {
   const jump = H > 1.05;
   return fill([
     k(0,   -.22, .5,  .03, null, [-.22, 0], [-.22, 0]),
-    k(.16, -.13, .5, 0, [.08, H], jump ? null : [-.2, 0], jump ? null : [-.21, 0]),
-    k(.3,  -.2,  Math.max(.43, H - .62), .05, [.08, H], H > 1.01 ? null : [-.19, 0], H > 1.01 ? null : [-.17, 0]),
-    k(.5, -.21, H - .32, .25, [.08, H], null, null),
-    k(.62, -.24, H - .05, .55, [.08, H], null, null),
-    k(.75, -.1,  H + .09, .6,  [.08, H], [-.13, H + .13], [-.22, H - .42]),
-    k(.84, -.04, H + .13, .6,  [.08, H], [.02, H + .01], [-.2, H - .22]),
+    k(.16, -.13, .5, 0, [-.02, H + .045], jump ? null : [-.2, 0], jump ? null : [-.21, 0]),
+    k(.3,  -.2,  Math.max(.43, H - .62), .05, [-.02, H + .045], H > 1.01 ? null : [-.19, 0], H > 1.01 ? null : [-.17, 0]),
+    k(.5, -.21, H - .32, .25, [-.02, H + .045], null, null),
+    k(.62, -.24, H - .05, .55, [-.02, H + .045], null, null),
+    k(.75, -.1,  H + .09, .6,  [-.02, H + .045], [-.13, H + .13], [-.22, H - .42]),
+    k(.84, -.04, H + .13, .6,  [-.02, H + .045], [.02, H + .01], [-.2, H - .22]),
     k(.93, fk,   H + .3,  .3,  null, [fk + .02, H], [-.02, H + .04]),
     k(1,   fEnd, H + .5,  .03, null, [fEnd, H], [fEnd, H]),
   ]);
@@ -489,7 +505,7 @@ const STEP_KEYS = (H, fEnd) => fill([
 /* Rundum Abstand: der ganze Körper passt auf die Fläche surf */
 const clearAt = (surf, x, g, r) => {
   if (idAt(x, g) !== surf) return false;
-  const r1 = r || (surf >= 0 ? .09 : .19), hs = hOf(surf);
+  const r1 = r || (surf >= 0 ? .09 : .25), hs = hOf(surf);
   for (let a = 0; a < 12; a++) {
     const ca = Math.cos(a * .5236), sa = Math.sin(a * .5236);
     if (idAt(x + ca * FH * r1, g + sa * FH * r1 * C) !== surf) return false;
@@ -526,20 +542,23 @@ function planAct(F, toId, ang){
   /* unten frei, Griffe oben, Standplatz oben */
   for (const r of [0, .08, -.08]) for (const f of [-.2, -.28]) if (!onId(E, n, f, r, lower)) return rej('r7');
   /* auf dem ganzen Kletterweg nur diese zwei Flächen, kein Nachbarbuchstabe im Weg */
-  for (let f = -.3; f <= .18; f += .03) for (const r of [-.25, -.17, -.08, 0, .08, .17, .25]) { const q = edgePt(E, n, f, r), id = idAt(q.x, q.g); if (f < -.02 ? id !== lower : (id !== lower && id !== upper)) return rej('r8'); }
+  for (let f = -.3; f <= .18; f += .03) for (let r = -.34; r <= .341; r += .04) { const q = edgePt(E, n, f, r), id = idAt(q.x, q.g); if (f < -.02 ? id !== lower : (id !== lower && id !== upper)) return rej('r8'); }
   let gr = null; for (const r of [.12, .08, .05]) if (onId(E, n, .1, r, upper) && onId(E, n, .1, -r, upper) && onId(E, n, .06, r, upper) && onId(E, n, .06, -r, upper)) { gr = r; break; }
   if (gr === null) return rej('r9');
+  /* wo genau die Kante unter jeder Hand liegt (bei runden Buchstaben nicht überall gleich) */
+  const edgeF = r => { for (let f = -.12; f <= .2; f += .005) if (onId(E, n, f, r, upper)) return f; return 0; };
+  const eoP = edgeF(gr), eoM = edgeF(-gr);
   /* Standplatz oben: Füsse vorne, hinten und seitlich auf dem Block, keine höhere Wand daneben */
   const standOk = f => { for (const df of [-.05, 0, .05]) for (const r of [-.08, 0, .08]) if (!onId(E, n, f + df, r, upper)) return false;
     for (let a = 0; a < 12; a++) { const c = edgePt(E, n, f, 0), q = idAt(c.x + Math.cos(a * .5236) * FH * .3, c.g + Math.sin(a * .5236) * FH * .3 * C); if (q === -2 || (q !== upper && hOf(q) > hOf(upper) + 2)) return false; } return true; };
   let fEnd = null; for (const f of [.15, .12, .1, .08]) if (standOk(f)) { fEnd = f; break; }
   if (fEnd === null) return rej('r10');
-  return { E, n, up, Hn, gr, fEnd, from: fromId, to: toId, lowZ: Math.min(hOf(fromId), hOf(toId)) };
+  return { E, n, up, Hn, gr, eoP, eoM, fEnd, from: fromId, to: toId, lowZ: Math.min(hOf(fromId), hOf(toId)) };
 }
 function actFromPlan(F, pl, down){
   const from = down ? pl.to : pl.from, to = down ? pl.from : pl.to, small = pl.Hn < .36;
   F.act = { kind: small ? 'step' : down ? 'down' : 'up', from, to, H: pl.Hn, ex: pl.E.x, eg: pl.E.g, n: pl.n, t: 0,
-    gr: pl.gr, fEnd: pl.fEnd, keys: small ? STEP_KEYS(pl.Hn, pl.fEnd) : UP_KEYS(pl.Hn, pl.fEnd), turn: 0, a0: F.a,
+    gr: pl.gr, eoP: pl.eoP, eoM: pl.eoM, fEnd: pl.fEnd, keys: small ? STEP_KEYS(pl.Hn, pl.fEnd) : UP_KEYS(pl.Hn, pl.fEnd), turn: 0, a0: F.a,
     dur: small ? .9 : (down ? 2.8 : 3.2) + pl.Hn * .9, lowZ: pl.lowZ, plan: pl };
 }
 /* Kletterstellen: einmal beim Aufbau geprüft, nur diese werden benutzt */
@@ -575,7 +594,7 @@ function startAct(F, toId, ang){
   if (!pl) return false;
   const small = pl.Hn < .36;
   F.act = { kind: small ? 'step' : pl.up ? 'up' : 'down', from: pl.from, to: pl.to, H: pl.Hn, ex: pl.E.x, eg: pl.E.g, n: pl.n, t: 0,
-    gr: pl.gr, fEnd: pl.fEnd, keys: small ? STEP_KEYS(pl.Hn, pl.fEnd) : UP_KEYS(pl.Hn, pl.fEnd), turn: 0, a0: F.a,
+    gr: pl.gr, eoP: pl.eoP, eoM: pl.eoM, fEnd: pl.fEnd, keys: small ? STEP_KEYS(pl.Hn, pl.fEnd) : UP_KEYS(pl.Hn, pl.fEnd), turn: 0, a0: F.a,
     dur: small ? .9 : (pl.up ? 2.8 : 2.5) + pl.Hn * .9, lowZ: pl.lowZ };
   return true;
 }
@@ -620,8 +639,11 @@ function actPose(F, dt){
     hf = HK.length > 1 ? spline(HK, kk, q => q.hand[0]) : K[a].hand[0]; hz = HK.length > 1 ? spline(HK, kk, q => q.hand[1]) : K[a].hand[1];
   }
   const sw = Math.sin(F.ph) * .03;
-  P.handL = { r: .17, f: .03 + sw, z: .3, w, g: { r: A.gr, f: hf, z: hz } };
-  P.handR = { r: -.17, f: .03 - sw, z: .3, w, g: { r: -A.gr, f: hf, z: hz } };
+  P.handL = { r: .12, f: .03 + sw, z: .3, w, g: { r: A.gr, f: hf + (A.eoP || 0), z: hz } };
+  P.handR = { r: -.12, f: .03 - sw, z: .3, w, g: { r: -A.gr, f: hf + (A.eoM || 0), z: hz } };
+  /* kleinere Figuren ziehen sich etwas höher, damit die Hände die Kante sicher erreichen */
+  P.pelvis.z += Math.max(0, 1 - F.look.h) * 1.2 * w * (1 - seg(k, .5, .7));
+  P.handL.pre = P.handR.pre = hi.length > 0 && k < K[hi[0]].t;
   P.armsUp = w > .3;
   /* beim Hochziehen Knie nach oben statt in die Wand */
   if (A.kind !== 'step') {
@@ -652,7 +674,7 @@ function build(){
   buildLetters();
   for (let n = 0; n < 6 && letters.tooClose; n++) { letters.shrink *= .9; buildLetters(); }
   /* Figurgrösse an die Strichstärke der Schrift koppeln, damit oben Platz zum Stehen ist */
-  const fh2 = Math.round(cl(letters.fs * .5, 34, desk() ? 86 : 70));
+  const fh2 = Math.round(cl(letters.fs * .43, 30, desk() ? 74 : 60));
   if (Math.abs(fh2 - FH) > 1) { FH = fh2; buildLetters(); for (let n = 0; n < 6 && letters.tooClose; n++) { letters.shrink *= .9; buildLetters(); } }
   buildSpots();
   Fs = LOOKS.map((_, i) => {
@@ -665,6 +687,31 @@ function build(){
     return F;
   });
 }
+/* Anlehnen: Rücken an die Wand, ein Fuss angewinkelt an der Wand; manche rauchen */
+const leanPt = (sp, d = .27) => ({ x: sp.E.x - sp.n.x * FH * d, g: sp.E.g - sp.n.v * FH * d * C });
+function leanPose(F, dt, held){
+  const L = F.lean; L.t += dt;
+  if (held) L.dur = Math.min(L.dur, L.t + .6);
+  let d = L.aT - L.a0; d = Math.atan2(Math.sin(d), Math.cos(d));
+  F.a = L.a0 + d * ez(cl(L.t / .7));
+  const b = ez(seg(L.t, .7, 1.5)) * (1 - ez(seg(L.t, L.dur - .7, L.dur)));
+  /* erst mit Abstand umdrehen, dann einen kleinen Schritt zurück an die Wand */
+  const p0 = leanPt(L.sp), p1 = leanPt(L.sp, .17); F.x = lerp(p0.x, p1.x, b); F.g = lerp(p0.g, p1.g, b);
+  const P = walkPose(F, { stride: 0 });
+  if (L.t < .7) { F.ph += dt * 5; const st = walkPose(F, { stride: .06 }); P.footL = st.footL; P.footR = st.footR; }
+  for (const h of [P.handL, P.handR]) { h.r *= .6; h.f *= .3; }
+  const mixP = (a, q) => { for (const k of ['r', 'f', 'z']) a[k] = lerp(a[k], q[k], b); };
+  P.lean = lerp(P.lean, -.12, b); P.pelvis.f = lerp(P.pelvis.f || 0, .04, b); P.pelvis.z -= .012 * b;
+  mixP(P.footL, { r: .085, f: .07, z: 0 }); mixP(P.footR, { r: -.055, f: -.1, z: .2 }); P.footR.toe = 0;
+  const cyc = (L.t % 5.5) / 5.5, toMouth = L.smoke ? ez(seg(cyc, .08, .2)) * (1 - ez(seg(cyc, .38, .5))) : 0;
+  if (L.smoke) { mixP(P.handL, { r: -.03, f: .07, z: .55 }); mixP(P.handR, { r: lerp(-.12, -.02, toMouth), f: lerp(.08, .11, toMouth), z: lerp(.5, .87, toMouth) }); }
+  else { mixP(P.handL, { r: .12, f: .0, z: .43 }); mixP(P.handR, { r: -.12, f: .0, z: .43 }); }
+  P.yaw = Math.sin(L.t * .5) * .1 * b;
+  L.b = b; L.mouth = toMouth; L.cyc = cyc;
+  if (L.t >= L.dur) { F.lean = null; F.pause = 0; F.sp = 0; F.vs = 0; F.escT = 0; F.stillT = 0; }
+  return P;
+}
+const SMOKE = [];
 function step(F, dt){
   let P;
   const held = view === 'pick' && F.i === sel;
@@ -675,6 +722,8 @@ function step(F, dt){
     P.pelvis.z = .5; P.footL = { r: .07, f: sw, z: .02 }; P.footR = { r: -.07, f: -sw * .6, z: .03 };
     P.handL = { r: .2, f: .02, z: .62 }; P.handR = { r: -.2, f: .02, z: .62 };
     F.dropZ = .16;
+  } else if (F.lean) {
+    P = leanPose(F, dt, held);
   } else if (F.act) {
     P = actPose(F, dt);
     if (F.act.t >= 1) { const A = F.act; F.surf = A.to; F.z0 = hOf(A.to);
@@ -700,13 +749,17 @@ function step(F, dt){
       const sight = sp => { const dx = sp.S2.x - F.x, dg = sp.S2.g - F.g, n = Math.ceil(Math.hypot(dx, dg / C) / (FH * .15)); for (let k = 1; k <= n; k++) if (!clearAt(-1, F.x + dx * k / n, F.g + dg * k / n)) return false; return true; };
       const busy = sp => Fs.some(o => o !== F && (o.goal === sp || o.spot === sp || o.surf === sp.id || (o.spot && o.spot.id === sp.id) || (o.goal && o.goal.id === sp.id) || (o.act && (o.act.to === sp.id || o.act.from === sp.id)) || Math.hypot(o.x - sp.S.x, (o.g - sp.S.g) / C) < FH * .6 || Math.hypot(o.x - sp.S2.x, (o.g - sp.S2.g) / C) < FH * .5));
       const near = letters.spots.filter(sp => Math.hypot(sp.S.x - F.x, (sp.S.g - F.g) / C) < W * .45 && !busy(sp) && sight(sp));
-      if (near.length) { F.goal = near[Math.floor(Math.random() * near.length)]; F.goalT = 0; F.goalStage = 0; }
+      /* manchmal statt klettern: an einen Buchstaben lehnen (nur vorne, wo man die Figur sieht) */
+      const lean = Math.random() < .45, pool = lean ? near.filter(sp => sp.n.v < -.3) : near;
+      if (pool.length) { F.goalBest = null; F.goalNP = 0; F.goal = pool[Math.floor(Math.random() * pool.length)]; F.goalKind = lean ? 'lean' : 'climb'; F.goalT = 0; F.goalStage = 0; }
     }
     if (F.goal) {
       F.goalT += dt;
-      const tgt = F.goalStage ? F.goal.S : F.goal.S2;
+      const tgt = F.goalStage ? (F.goalKind === 'lean' ? leanPt(F.goal) : F.goal.S) : F.goal.S2;
       const gx = tgt.x - F.x, gg = (tgt.g - F.g) / C, d = Math.hypot(gx, gg);
       let justArrived = false;
+      /* kommt die Figur dem Ziel nicht mehr näher, gibt sie es auf statt im Kreis zu laufen */
+      if (d < (F.goalBest ?? 1e9) - FH * .03) { F.goalBest = d; F.goalNP = 0; } else F.goalNP = (F.goalNP || 0) + dt;
       if (!F.goalStage && d < FH * .15) { F.goalStage = 1; justArrived = true; }
       let da = Math.atan2(gg, gx) - F.a; da = Math.atan2(Math.sin(da), Math.cos(da));
       turn = da * 3.5;
@@ -716,8 +769,13 @@ function step(F, dt){
         if (d > 1) { F.x += gx / d * step; F.g += gg / d * step * C; }
         F.sp = lerp(F.sp, F.want * .7, dt * 4);
       }
-      if (F.goalStage && !justArrived && d < Math.max(2, F.sp * FH * dt * 1.5) && !Fs.some(o => o !== F && !o.drag && Math.hypot(o.x - F.goal.S.x, (o.g - F.goal.S.g) / C) < FH * .34)) { F.goalStage = 0; F.waitT = 0; F.x = F.goal.S.x; F.g = F.goal.S.g; F.spot = F.goal; F.goal = null; F.topWait = 2 + Math.random() * 3; actFromPlan(F, F.spot, false); }
-      else if (F.goalT > 12 || (F.goalStage && (F.waitT = (F.waitT || 0) + dt) > .6)) { F.goal = null; F.goalStage = 0; F.waitT = 0; }
+      if (F.goalStage && !justArrived && d < Math.max(2, F.sp * FH * dt * 1.5) && F.goalKind === 'lean') {
+        F.x = tgt.x; F.g = tgt.g; const n = F.goal.n;
+        F.lean = { t: 0, dur: 5 + Math.random() * 7, smoke: Math.random() < .6, a0: F.a, aT: Math.atan2(-n.v, -n.x), sp: F.goal, puff: 0 };
+        F.goal = null; F.goalStage = 0; F.waitT = 0; F.sp = 0; F.vs = 0;
+      }
+      else if (F.goalStage && !justArrived && d < Math.max(2, F.sp * FH * dt * 1.5) && !Fs.some(o => o !== F && !o.drag && Math.hypot(o.x - F.goal.S.x, (o.g - F.goal.S.g) / C) < FH * .34)) { F.goalStage = 0; F.waitT = 0; F.x = F.goal.S.x; F.g = F.goal.S.g; F.spot = F.goal; F.goal = null; F.topWait = 2 + Math.random() * 3; actFromPlan(F, F.spot, false); }
+      else if (F.goalT > 12 || F.goalNP > 1.5 || (F.goalStage && (F.waitT = (F.waitT || 0) + dt) > .6)) { F.goal = null; F.goalStage = 0; F.waitT = 0; }
     }
     if (!F.act) {
     const x0 = F.x, g0 = F.g;
@@ -747,6 +805,7 @@ function step(F, dt){
       for (const da of [0, .35, -.35, .7, -.7, 1.1, -1.1, 1.6, -1.6, 2.2, -2.2, Math.PI]) {
         const a2 = desired + da * (Math.sin(F.seed) > 0 ? 1 : -1); if (free(a2, F.goal && F.escT <= 0 && !da ? Math.hypot(F.goal.S2.x - F.x, (F.goal.S2.g - F.g) / C) / FH : 9)) { pick = a2; da0 = da; break; } }
       if (F.goal) { F.goalBlock = pick !== null && Math.abs(pick - desired) < .01 ? 0 : (F.goalBlock || 0) + dt; if (F.goalBlock > 1.2) { F.goal = null; F.goalBlock = 0; } }
+      if (pick === null && F.escT > 0) { pick = F.escA; want *= .5; }
       if (pick === null) { want = 0; F.a += 2 * dt; }
       else { let d = pick - F.a; d = Math.atan2(Math.sin(d), Math.cos(d)); F.a += Math.sign(d) * Math.min(Math.abs(d), (F.goal || F.escT > 0 || da0 ? 5 : 2.2) * dt); if (Math.abs(d) > 1) want *= .35; }
     }
@@ -756,7 +815,7 @@ function step(F, dt){
       const ca = Math.cos(F.a), sa = Math.sin(F.a);
       const nx = F.x + ca * v * dt, ng = F.g + sa * v * dt * C;
       /* steht die Figur knapp an einer Wand (nach dem Klettern), darf sie sich wegbewegen */
-      if (clear(nx, ng) || (idAt(nx, ng) === F.surf && free(F.a))) { F.x = nx; F.g = ng; }
+      if (clear(nx, ng) || (idAt(nx, ng) === F.surf && (free(F.a) || (F.escT > 0 && clearAt(F.surf, nx, ng, .1))))) { F.x = nx; F.g = ng; }
       else F.sp *= .5;
       if (!F.goal && Math.random() < dt * .05) F.pause = 1 + Math.random() * 2.5;
     }
@@ -775,6 +834,9 @@ function step(F, dt){
     const vs = F.vs || 0, stride = .36 * cl(vs / .65, 0, 1.1);
     F.ph += dt * (vs * FH) / (2 * Math.max(.05, stride) * FH) * Math.PI * 2 * (vs > .02 ? 1 : 0);
     P = walkPose(F, { stride });
+    /* nah an einer Wand: Arme eng am Körper, damit keine Hand in den Block greift */
+    F.armIn = lerp(F.armIn || 0, clearAt(F.surf, F.x, F.g, F.surf >= 0 ? .2 : .36) ? 0 : 1, Math.min(1, dt * 8));
+    if (F.armIn > .01) for (const h of [P.handL, P.handR]) { h.r *= 1 - .45 * F.armIn; h.f *= 1 - .6 * F.armIn; }
     if (vs < .05) { /* ruhig stehen: atmen, Gewicht verlagern, umschauen */
       P.pelvis.r = Math.sin(t * .8) * .01; P.pelvis.z += Math.sin(t * 2.2) * .003; P.yaw = Math.sin(t * .6) * .18;
     }
@@ -814,6 +876,20 @@ function render(dt){
       c.beginPath(); c.ellipse(F.x, gy, FH * .32 * k, FH * .32 * C * k, 0, 0, 7); c.lineWidth = 2; c.strokeStyle = PINK; c.stroke();
     }
     if (F.land > .2) { const q = 1 - (F.land - .2) / .15; c.beginPath(); c.ellipse(F.x, gy, FH * (.16 + q * .18), FH * (.16 + q * .18) * C, 0, 0, 7); c.lineWidth = 1.2; c.strokeStyle = `rgba(0,0,0,${(1 - q) * .7})`; c.stroke(); }
+  }
+  /* Rauch: kleine gezeichnete Kringel, die aufsteigen und dünner werden */
+  for (const F of Fs) {
+    const L = F.lean; if (!L || !F.cig) continue;
+    L.puff -= dt; if (L.puff <= 0 && !RM) { L.puff = .35 + Math.random() * .25; SMOKE.push({ x: F.cig[0], y: F.cig[1], a: 0, life: 2 + Math.random(), s: Math.random() * 6, big: 0 }); }
+    if (L.mouth < .05 && L.lastMouth > .5 && F.box) for (let i = 0; i < 3; i++) SMOKE.push({ x: F.box.head[0] + 3, y: F.box.head[1] + FH * .1, a: -i * .12, life: 2.4, s: Math.random() * 6, big: 1 });
+    L.lastMouth = L.mouth;
+  }
+  const us = FH / 60;
+  for (let i = SMOKE.length - 1; i >= 0; i--) {
+    const p = SMOKE[i]; p.a += dt; if (p.a >= p.life) { SMOKE.splice(i, 1); continue; } if (p.a < 0) continue;
+    const q = p.a / p.life; p.y -= (10 + p.big * 6) * us * dt; p.x += (Math.sin(p.a * 2.2 + p.s) * 6 + p.big * 4) * us * dt;
+    c.beginPath(); c.arc(p.x, p.y, (1.2 + q * (5 + p.big * 4)) * us, 0, 7);
+    c.lineWidth = Math.max(.3, 1.2 * (1 - q)); c.strokeStyle = `rgba(0,0,0,${(1 - q) * .85})`; c.stroke();
   }
   c.textAlign = 'center'; c.textBaseline = 'bottom';
   for (const F of Fs) {
@@ -901,7 +977,7 @@ cv.addEventListener('pointerdown', e => {
 cv.addEventListener('pointermove', e => {
   if (!drag) { const F = (view === 'pick' || view === 'lobby') && pick(e.clientX, e.clientY); cv.classList.toggle('grab', !!F); return; }
   const F = drag.F;
-  if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 6) { drag.moved = true; F.act = null; F.drag = { vx: 0 }; F.dropZ = 0; }
+  if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 6) { drag.moved = true; F.act = null; F.lean = null; F.drag = { vx: 0 }; F.dropZ = 0; }
   if (!drag.moved) return;
   const nx = e.clientX + drag.ox;
   F.drag.vx = lerp(F.drag.vx, (nx - F.x) / .016, .3);
