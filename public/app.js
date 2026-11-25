@@ -1,21 +1,19 @@
 {
 const $ = id => document.getElementById(id);
 const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
-const PINK = '#ff4fa8', INK = '#000', PAPER = '#fff';
-const N = 24, FREE = 6, KEY = 'wichteln-v3';
+const PINK = '#ff4fa8', INK = '#000';
+const N = 24, FREE = 6;
 /* Anmeldung offen bis 1. Dezember, 12 Uhr (Zürich). Zum Testen: ?phase=los oder ?phase=offen */
 let DEADLINE = new Date('2026-12-01T12:00:00+01:00').getTime(), SKEW = 0;
 const srvNow = () => Date.now() + SKEW;
 const isOpen = () => srvNow() < DEADLINE;
 
-/* ---------- Zustand der Vorschau (später Netlify) ---------- */
 /* Zustand kommt vom Server. Auf dem Gerät liegt nur: welche Figur, ein geheimer Schlüssel und der Code */
 let S = { claims: {}, me: null, draws: {} };
 const IDK = 'wichteln26-id';
 let ID = null; try { ID = JSON.parse(localStorage.getItem(IDK)); } catch (e) {}
 if (!ID || typeof ID.token !== 'string' || !Number.isInteger(ID.fig)) ID = null;
 const saveId = () => { try { ID ? localStorage.setItem(IDK, JSON.stringify(ID)) : localStorage.removeItem(IDK); } catch (e) {} };
-const save = () => {};
 async function api(path, body){
   const r = await fetch('api/' + path, body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store' } : { cache: 'no-store' });
   let d = null; try { d = await r.json(); } catch (e) {}
@@ -114,7 +112,7 @@ function glyphShapes(ch, fs){
 }
 const cv = $('cv'), ctx = cv.getContext('2d');
 let W = 0, Hh = 0, DPR = 1, FH = 100, LW = 2;
-const letters = { cv: document.createElement('canvas'), ids: null, idW: 0, idH: 0, G: [] };
+const letters = { ids: null, idW: 0, idH: 0, G: [] };
 const mobile = () => innerWidth < 640, desk = () => innerWidth >= 1024;
 
 /* ---------- Buchstaben: extrudierte Strichzeichnung, keine Grautöne ---------- */
@@ -122,8 +120,6 @@ function buildLetters(){
   const L = letters;
   /* das i steht als Info Zeichen gleich nach 2026 */
   const rows = mobile() ? ['WICH', 'TELN', '2026i'] : ['WICHTELN', '2026i'];
-  const wt = ch => ch === 'i' ? .5 : 1;
-  const font = fs => `700 ${fs}px Jost, Futura, "Century Gothic", sans-serif`;
   const heights = [1.15, .6, 1.3, .8, 1.4, .65, 1.05, .55, 1.25, .75, 1.35, .7];
   /* Buchstaben verteilt über den Platz, leicht gedreht, mit Platz zum Durchgehen */
   let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
@@ -134,7 +130,6 @@ function buildLetters(){
   const maxN = Math.max(...rows.map(r => r.replace('i', '').length));
   const fs = Math.floor(Math.min((x1 - x0) / maxN * (mobile() ? .66 : desk() ? .76 : .68), rowSp / C * .5, FH * 3) * (L.shrink || 1));
   rows.forEach((row, ri) => {
-    /* Plätze nach Breite verteilt; jeder Buchstabe etwas höher oder tiefer, die Zeile bleibt lesbar */
     /* das i braucht keinen eigenen Platz: es steht direkt rechts neben der 6 */
     const hasI = row.includes('i'), rx1 = hasI ? x1 - fs * .8 : x1, letters_ = row.replace('i', '');
     const unit = (rx1 - x0) / letters_.length; let acc = 0, lastX = 0;
@@ -358,7 +353,7 @@ function edgeNormal(x, gy, upperId){
 function makeFig(i){
   const Lk = LOOKS[i];
   return { i, look: Lk, x: 0, g: 0, a: Math.PI / 2, ph: Math.random() * 6, surf: -1, sp: 0, want: .6 + Math.random() * .16,
-    seed: Math.random() * 100, pause: 0, look_: 0, act: null, drag: null, lift: 0, wave: 0, key: 0, box: null };
+    seed: Math.random() * 100, pause: 0, act: null, drag: null, box: null };
 }
 /* Pose: lokale Ziele (r = rechts, f = vorne, z = oben), in Figurhöhen */
 function walkPose(F, o){
@@ -411,7 +406,6 @@ function solveFig(F, P){
   const footL = absP(P.footL), footR = absP(P.footR);
   const L1 = .25 * FH * k, L2 = .25 * FH * k;
   const ankL = add(footL, mul(up, .03 * FH)), ankR = add(footR, mul(up, .03 * FH));
-  /* Knie: nach vorne, und wenn der Fuss hoch kommt nach oben; nie nach hinten umklappen */
   /* Knie: beim Gehen nach vorne; beim Klettern zur Seite und nach oben, nie in die Wand */
   const kd = (kb, side) => add(add(mul(fw, 1 - .85 * kb), mul(rt, side * .7 * kb)), mul(up, .85 * (1 - kb) + .25 * kb));
   /* zeitlich glätten: das Knie bleibt auf der Seite, auf der es im letzten Bild war */
@@ -424,7 +418,6 @@ function solveFig(F, P){
   return { fw, rt, up, pel, chest, shL, shR, hipL, hipR, neck, headC, kneeL: kL.j, ankL: kL.end, kneeR: kR.j, ankR: kR.end,
     elbL: eL.j, handL: eL.end, elbR: eR.j, handR: eR.end, toeL: P.footL.toe || 0, toeR: P.footR.toe || 0, k, bw };
 }
-/* Zeichnen */
 /* Strichmännchen: dicke runde Linien, Kopf als Kreis; hintere Glieder zuerst */
 function drawFig(c, F, J, base, opt = {}){
   const col = S.claims[F.i] != null ? PINK : INK;
@@ -457,7 +450,6 @@ function drawFig(c, F, J, base, opt = {}){
    so bleibt jedes Ziel für die Beine erreichbar und nichts knickt falsch. */
 const dangle = (k, side) => [k.pel[0] - .03 - (side ? .02 : 0), k.pel[1] - .48 + (side ? .02 : 0)];
 const fill = keys => keys.map(k => ({ ...k, fL: k.fL || dangle(k, 0), fR: k.fR || dangle(k, 1) }));
-/* fEnd: wie weit hinter der Kante die Figur oben stehen bleibt (geprüft, dass dort Block ist) */
 /* Hüfte so hoch, dass der Arm (Schulter 0.27 über der Hüfte, Reichweite 0.3) die Kante sicher erreicht */
 const reachZ = (pf, lean, hf, H) => { const sf = pf + .27 * Math.sin(lean), dx = Math.min(.24, Math.abs(hf - sf)); return H - Math.sqrt(Math.max(.0001, .26 * .26 - dx * dx)) - .25 * Math.cos(lean); };
 const UP_KEYS = (H, fEnd) => {
@@ -505,30 +497,29 @@ const baseZ = F => F.act ? (F.act.turn < 1 ? hOf(F.act.from) : F.act.lowZ) : F.z
 const edgePt = (E, n, f, r) => ({ x: E.x + (n.x * f - n.v * r) * FH, g: E.g + (n.v * f + n.x * r) * FH * C });
 const onId = (E, n, f, r, id) => { const q = edgePt(E, n, f, r); return idAt(q.x, q.g) === id; };
 /* Kletterei planen und prüfen: Start, Griffe, Standplatz müssen stimmen, sonst nicht klettern */
-const rej = () => null;
 function planAct(F, toId, ang){
   const fromId = F.surf;
-  if (toId === -2 || fromId === -2) return rej('r1');
+  if (toId === -2 || fromId === -2) return null;
   const dh = (hOf(toId) - hOf(fromId)) / FH, up = dh > 0, Hn = Math.abs(dh);
-  if (up && Hn > 1.85) return rej('r2');
+  if (up && Hn > 1.85) return null;
   /* Kante: in Richtung der Annäherung bis zum ersten fremden Pixel */
   const ca = Math.cos(ang), sa = Math.sin(ang);
   let x = F.x, g = F.g, n0 = 0;
   while (idAt(x, g) === fromId && n0++ < FH * .8) { x += ca * .5; g += sa * .5 * C; }
-  if (idAt(x, g) !== toId) return rej('r3');
+  if (idAt(x, g) !== toId) return null;
   const E = { x: x - ca * .25, g: g - sa * .25 * C };
   const upper = up ? toId : fromId, lower = up ? fromId : toId;
-  const nn = edgeNormal(E.x, E.g, upper); if (!nn.x && !nn.v) return rej('r4');
+  const nn = edgeNormal(E.x, E.g, upper); if (!nn.x && !nn.v) return null;
   const n = { x: nn.x, v: nn.v };
   /* nicht zu schräg anlaufen */
   const dir = up ? 1 : -1, cosA = (Math.cos(ang) * n.x + Math.sin(ang) * n.v) * dir;
-  if (cosA < .55) return rej('r5');
+  if (cosA < .55) return null;
   /* unten frei, Griffe oben, Standplatz oben */
-  for (const r of [0, .08, -.08]) for (const f of [-.2, -.28]) if (!onId(E, n, f, r, lower)) return rej('r7');
+  for (const r of [0, .08, -.08]) for (const f of [-.2, -.28]) if (!onId(E, n, f, r, lower)) return null;
   /* auf dem ganzen Kletterweg nur diese zwei Flächen, kein Nachbarbuchstabe im Weg */
-  for (let f = -.3; f <= .18; f += .03) for (let r = -.34; r <= .341; r += .04) { const q = edgePt(E, n, f, r), id = idAt(q.x, q.g); if (f < -.02 ? id !== lower : (id !== lower && id !== upper)) return rej('r8'); }
+  for (let f = -.3; f <= .18; f += .03) for (let r = -.34; r <= .341; r += .04) { const q = edgePt(E, n, f, r), id = idAt(q.x, q.g); if (f < -.02 ? id !== lower : (id !== lower && id !== upper)) return null; }
   let gr = null; for (const r of [.12, .08, .05]) if (onId(E, n, .1, r, upper) && onId(E, n, .1, -r, upper) && onId(E, n, .06, r, upper) && onId(E, n, .06, -r, upper)) { gr = r; break; }
-  if (gr === null) return rej('r9');
+  if (gr === null) return null;
   /* wo genau die Kante unter jeder Hand liegt (bei runden Buchstaben nicht überall gleich) */
   const edgeF = r => { for (let f = -.12; f <= .2; f += .005) if (onId(E, n, f, r, upper)) return f; return 0; };
   const eoP = edgeF(gr), eoM = edgeF(-gr);
@@ -536,7 +527,7 @@ function planAct(F, toId, ang){
   const standOk = f => { for (const df of [-.05, 0, .05]) for (const r of [-.08, 0, .08]) if (!onId(E, n, f + df, r, upper)) return false;
     for (let a = 0; a < 12; a++) { const c = edgePt(E, n, f, 0), q = idAt(c.x + Math.cos(a * .5236) * FH * .3, c.g + Math.sin(a * .5236) * FH * .3 * C); if (q === -2 || (q !== upper && hOf(q) > hOf(upper) + 2)) return false; } return true; };
   let fEnd = null; for (const f of [.15, .12, .1, .08]) if (standOk(f)) { fEnd = f; break; }
-  if (fEnd === null) return rej('r10');
+  if (fEnd === null) return null;
   return { E, n, up, Hn, gr, eoP, eoM, fEnd, from: fromId, to: toId, lowZ: Math.min(hOf(fromId), hOf(toId)) };
 }
 function actFromPlan(F, pl, down){
@@ -559,29 +550,18 @@ function buildSpots(){
     for (let j = 0; j < pts.length; j += 3) {
       const [x, y] = pts[j];
       if (mine.some(sp => Math.hypot(sp.E.x - x, (sp.E.g - y) / C) < FH * .35)) continue;
-      rej('cand');
       const nn = edgeNormal(x, y, i); if (!nn.x && !nn.v) continue;
       const S = { x: x - nn.x * FH * .24, g: y - nn.v * FH * .24 * C };
-      if (idAt(S.x, S.g) !== -1) { rej('sS'); continue; }
+      if (idAt(S.x, S.g) !== -1) continue;
       let ok = true; for (let a = 0; a < 12 && ok; a++) if (idAt(S.x + Math.cos(a * .5236) * FH * .14, S.g + Math.sin(a * .5236) * FH * .14 * C) !== -1) ok = false;
-      if (!ok) { rej('sRing'); continue; } if (S.x < FH * .5 || S.x > W - FH * .5 || S.g < top() || S.g > bottom()) { rej('sB'); continue; }
+      if (!ok) continue; if (S.x < FH * .5 || S.x > W - FH * .5 || S.g < top() || S.g > bottom()) continue;
       const pl = planAct({ x: S.x, g: S.g, surf: -1 }, i, Math.atan2(nn.v, nn.x));
       const S2 = { x: x - nn.x * FH * .55, g: y - nn.v * FH * .55 * C };
-      if (pl && !clearAt(-1, S2.x, S2.g)) rej('sS2');
       if (pl && clearAt(-1, S2.x, S2.g)) mine.push({ ...pl, S, S2, id: i });
     }
     out.push(...mine);
   });
   L.spots = out;
-}
-function startAct(F, toId, ang){
-  const pl = planAct(F, toId, ang === undefined ? F.a : ang);
-  if (!pl) return false;
-  const small = pl.Hn < .36;
-  F.act = { kind: small ? 'step' : pl.up ? 'up' : 'down', from: pl.from, to: pl.to, H: pl.Hn, ex: pl.E.x, eg: pl.E.g, n: pl.n, t: 0,
-    gr: pl.gr, eoP: pl.eoP, eoM: pl.eoM, fEnd: pl.fEnd, keys: small ? STEP_KEYS(pl.Hn, pl.fEnd) : UP_KEYS(pl.Hn, pl.fEnd), turn: 0, a0: F.a,
-    dur: small ? .9 : (pl.up ? 2.8 : 2.5) + pl.Hn * .9, lowZ: pl.lowZ };
-  return true;
 }
 function actPose(F, dt){
   const A = F.act, n = A.n;
@@ -613,7 +593,6 @@ function actPose(F, dt){
   const P = { pelvis: { r: 0, f: pf, z: pz, abs: true }, lean: sp(q => q.lean) * (fwdStepDown ? .5 : 1), yaw: 0 };
   P.footL = { r: .075, f: sp(q => q.fL[0]) * sgn, z: sp(q => q.fL[1]) };
   P.footR = { r: -.075, f: sp(q => q.fR[0]) * sgn, z: sp(q => q.fR[1]) };
-  /* Hände: zuerst zur Kante greifen, dann fest an der geprüften Stelle */
   /* Greifen: zwischen den Schlüsselbildern mit Hand weich hin, sonst fest auf der geprüften Kante */
   const hi = K.map((q, j) => q.hand ? j : -1).filter(j => j >= 0);
   let w = 0, hf = .05, hz = A.H;
@@ -641,7 +620,6 @@ function actPose(F, dt){
 
 /* ---------- Szene ---------- */
 let Fs = [], view = 'pick', sel = null, last = 0, clock = 0;
-const taken = () => new Set(Object.values(S.draws));
 /* im Topf: nach Anmeldeschluss alle anderen Angemeldeten, bis man sein Los aufgedeckt hat */
 const eligible = () => isOpen() || S.me == null || S.draws[S.me] != null ? [] : Object.keys(S.claims).map(Number).filter(i => i !== S.me);
 const top = () => Hh * .05 + FH * .9, bottom = () => Hh - (mobile() ? 125 : desk() ? 120 : 105);
@@ -650,7 +628,7 @@ function inBounds(F){
   return F.x > m && F.x < W - m && F.g > top() && F.g < bottom();
 }
 function build(){
-  W = innerWidth; Hh = innerHeight; DPR = Math.min(3, Math.round(devicePixelRatio || 1)) || 1;
+  W = innerWidth; Hh = innerHeight; DPR = Math.min(2, Math.round(devicePixelRatio || 1)) || 1;
   cv.width = W * DPR; cv.height = Hh * DPR;
   FH = Math.round(Math.max(40, Math.min(W * .105, Hh * .075, 72)));
   LW = mobile() ? 1.7 : 2.1;
@@ -795,7 +773,6 @@ function pickPose(F, dt){
   if (K.t >= 1.8) { F.pickUp = null; F.pause = .3; F.vs = 0; }
   return P;
 }
-/* Sitzen auf der Kante: umdrehen, an die Kante, hinsetzen, Beine baumeln lassen */
 /* Weg auf der Buchstabenoberfläche zur nächsten Kletterstelle (Raster, breit genug für die Füsse) */
 function topRoute(id, from){
   const st = 3, gw = Math.ceil(W / st), gh = Math.ceil(Hh / st), m = FH * .07;
@@ -815,6 +792,7 @@ function topRoute(id, from){
   return null;
 }
 const standPt = sp => ({ x: sp.E.x + sp.n.x * sp.fEnd * FH, g: sp.E.g + sp.n.v * sp.fEnd * FH * C });
+/* Sitzen auf der Kante: umdrehen, an die Kante, hinsetzen, Beine baumeln lassen */
 function sitPose(F, dt, held){
   const L = F.sit; L.t += dt;
   if (held) L.dur = Math.min(L.dur, L.t + .9);
@@ -1104,7 +1082,6 @@ function drawGift(c, x, y, s){
 }
 
 
-/* ---------- Grosse Ansichten ---------- */
 /* grosse Ansicht: Platz und Pose je Figur */
 const bigFH = (r, n) => Math.min(r.height * .86 / (HZ + .1), r.width / n * .95);
 function bigJ(o, j, fh){
@@ -1117,14 +1094,14 @@ function bigJ(o, j, fh){
 }
 function drawBig(canvas, list){
   const r = canvas.getBoundingClientRect(); if (!r.width) return;
-  const d = Math.min(3, Math.round(devicePixelRatio || 1)) || 1;
+  const d = Math.min(2, Math.round(devicePixelRatio || 1)) || 1;
   if (canvas.width !== Math.round(r.width * d)) { canvas.width = Math.round(r.width * d); canvas.height = Math.round(r.height * d); }
   const c = canvas.getContext('2d'); c.setTransform(d, 0, 0, d, 0, 0); c.clearRect(0, 0, r.width, r.height);
   const fh = bigFH(r, list.length), keepFH = FH;
   list.forEach((o, j) => { const J = bigJ(o, j, fh), box = o.F.box; FH = fh; drawFig(c, o.F, J, { x: r.width * (j + .5) / list.length, gy: r.height * .94, z: 0 }); FH = keepFH; o.F.box = box; });
 }
 /* Übergang: die Figur fliegt vom Platz in die grosse Ansicht und zurück, die Pose geht fliessend über */
-let FLY = null;
+let FLY = null, flyDirty = false;
 function startFly(dir, list, canvas){
   list = list.filter(o => o.F); if (!list.length) return;
   if (FLY) FLY.list.forEach(o => o.F.flyHide = false);
@@ -1140,10 +1117,11 @@ function mixJ(A, sa, B, sb, k, s){
   return o;
 }
 function drawFly(dt){
-  const cv2 = $('fly'), d = Math.min(3, Math.round(devicePixelRatio || 1)) || 1;
+  /* nur arbeiten, solange etwas fliegt; danach einmal leeren */
+  if (!FLY) { if (flyDirty) { const c0 = $('fly').getContext('2d'); c0.setTransform(1, 0, 0, 1, 0, 0); c0.clearRect(0, 0, $('fly').width, $('fly').height); flyDirty = false; } return; }
+  const cv2 = $('fly'), d = Math.min(2, Math.round(devicePixelRatio || 1)) || 1; flyDirty = true;
   if (cv2.width !== innerWidth * d || cv2.height !== innerHeight * d) { cv2.width = innerWidth * d; cv2.height = innerHeight * d; }
   const c = cv2.getContext('2d'); c.setTransform(d, 0, 0, d, 0, 0); c.clearRect(0, 0, innerWidth, innerHeight);
-  if (!FLY) return;
   FLY.t += dt / FLY.dur;
   const e = ez(ez(cl(FLY.t))), k = FLY.dir === 'in' ? e : 1 - e, r = FLY.canvas.getBoundingClientRect(), n = FLY.list.length, fhB = bigFH(r, n);
   FLY.list.forEach((o, j) => {
@@ -1167,7 +1145,7 @@ function left(){
 /* Countdown oben in der Blase, bis auf die Sekunde */
 function tickCd(){
   const el = $('cd'), l = left(), show = isOpen() && !!l && (view === 'pick' || view === 'lobby');
-  el.hidden = !show; if (show) el.innerHTML = `Anmeldeschluss in <b>${l}</b>`;
+  el.hidden = !show; if (show && el.dataset.t !== l) { el.dataset.t = l; el.innerHTML = `Anmeldeschluss in <b>${l}</b>`; }
 }
 setInterval(tickCd, 250);
 let wasOpen = true, busy = false;
@@ -1211,11 +1189,11 @@ function tap(F){
 }
 
 /* Info Zeichen getroffen? Genau auf der Form, oben oder an der Seite */
+/* Info Zeichen getroffen? Grosszügig um die Form herum, damit es auch mit dem Finger klappt */
 function onInfo(x, y){
-  const I = letters.info; if (!I) return false;
-  const id = letters.G.findIndex(g => g.info);
-  for (let z = 0; z <= I.H; z += 2) if (idAt(x, y + z * HZ) === id) return true;
-  return false;
+  if (!letters.info) return false;
+  const r = $('info').getBoundingClientRect(), pad = 14;
+  return r.width > 0 && x >= r.left - pad && x <= r.right + pad && y >= r.top - pad && y <= r.bottom + pad;
 }
 /* Ziehen und Antippen */
 let drag = null;
@@ -1223,7 +1201,11 @@ const pick = (x, y) => [...Fs].sort((a, b) => b.g - a.g).find(F => F.box && x >=
 cv.addEventListener('pointerdown', e => {
   if (view !== 'pick' && view !== 'lobby') return;
   const F = pick(e.clientX, e.clientY);
-  if (!F) { if (onInfo(e.clientX, e.clientY)) $('faq').showModal(); return; }
+  if (!F) {
+    if (onInfo(e.clientX, e.clientY)) openFaq();
+    /* Tipp ins Leere: gewählte Figur wieder abwählen */
+    else if (view === 'pick' && sel != null) { sel = null; setView('pick'); }
+    return; }
   cv.setPointerCapture(e.pointerId);
   drag = { F, sx: e.clientX, sy: e.clientY, moved: false, ox: F.x - e.clientX, og: F.g - e.clientY };
   cv.classList.add('grabbing');
@@ -1347,9 +1329,16 @@ function runDraw(pool, pickI){
   };
   tick();
 }
-$('info').addEventListener('click', () => $('faq').showModal());
+$('info').addEventListener('click', openFaq);
 $('faqClose').addEventListener('click', () => $('faq').close());
-$('faq').addEventListener('click', e => { if (e.target === $('faq')) $('faq').close(); });
+/* Tipp neben das Fenster schliesst es; der Tipp, der es geöffnet hat, zählt nicht */
+let faqAt = 0;
+function openFaq(){ if ($('faq').open) return; faqAt = performance.now(); $('faq').showModal(); }
+$('faq').addEventListener('click', e => {
+  if (performance.now() - faqAt < 500) return;
+  const r = $('faq').getBoundingClientRect();
+  if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) $('faq').close();
+});
 $('resBack').addEventListener('click', () => { setView('lobby'); startFly('out', [{ F: fig(S.me), turn: -.35 }, { F: fig(S.draws[S.me]), wave: true, turn: .35 }], $('resC')); });
 
 function loop(t){
@@ -1361,7 +1350,6 @@ function loop(t){
   drawFly(dt);
   requestAnimationFrame(loop);
 }
-if (location.hostname === 'localhost') window.__dbg = { Fs: () => Fs, S: () => S };
 let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(build, 200); });
 /* Start: Schrift laden, Stand vom Server holen; danach alle paar Sekunden nachfragen, solange die Seite sichtbar ist */
 const firstLoad = () => refresh().catch(() => new Promise(r => setTimeout(r, 2500)).then(firstLoad));
