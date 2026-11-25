@@ -1,131 +1,38 @@
-<!DOCTYPE html>
-<html lang="de">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Wichteln</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<style>
-/* VOICE: gezeichnet, ruhig, mit Witz; reine Strichzeichnung in Schwarz auf Weiss, ein Pink
-   IDEA: ein Platz von schräg oben; die Buchstaben sind Geschenkblöcke, auf die man klettert
-   PICTURE: ein einziger Canvas; Buchstaben extrudiert mit Kontur, Figuren mit 3D Skelett
-   COLOUR and TYPE: Weiss, Schwarz, Pink #ff4fa8; Jost als Futura Ersatz
-   LAYOUT: Vollbild; unten immer eine Zeile, die sagt, was zu tun ist */
-:root{color-scheme:light;--k:#000;--w:#fff;--p:#ff4fa8;--mid:#777;--ease:cubic-bezier(.76,0,.18,1)}
-*{box-sizing:border-box;min-width:0}
-[hidden]{display:none!important}
-html,body{height:100%;margin:0}
-body{background:var(--w);color:var(--k);font:400 16px/1.5 "Jost","Futura","Century Gothic",system-ui,sans-serif;overflow:hidden;overscroll-behavior:none;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
-#cd{position:fixed;top:max(10px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:9;margin:0;padding:10px 20px;border:1.5px solid var(--k);border-radius:999px;background:var(--w);color:var(--k);font-size:15px;line-height:1.2;white-space:nowrap;font-variant-numeric:tabular-nums;pointer-events:none}
-#cd b{font-weight:500}
-@media(min-width:1024px){#cd{font-size:18px;padding:12px 26px}}
-#info{position:fixed;z-index:6;background:transparent;border:0;padding:0;border-radius:12px;pointer-events:none}
-#cv.info{cursor:pointer}
-#info:focus-visible{outline:2px solid var(--k);outline-offset:2px}
-#info[hidden]{display:none}
-#faq{border:1.5px solid var(--k);border-radius:22px;padding:26px 24px 22px;max-width:min(380px,calc(100vw - 32px));width:100%;color:var(--k);background:var(--w)}
-#faq::backdrop{background:rgba(255,255,255,.75)}
-#faq h2{margin:0 0 16px;font-weight:500;font-size:22px}
-#faq dl{margin:0 0 20px;display:grid;gap:12px}
-#faq dl div{display:grid;grid-template-columns:96px 1fr;gap:10px;align-items:baseline}
-#faq dt{color:var(--mid);font-size:14px}
-#faq dd{margin:0;font-size:16px;line-height:1.35}
-#faq .pill{width:100%}
-@media(min-width:1024px){#faq dd{font-size:17px}#faq h2{font-size:26px}}
-#reset{position:fixed;top:max(6px,env(safe-area-inset-top));right:6px;z-index:9;font:inherit;font-size:20px;min-width:44px;min-height:44px;color:var(--mid);background:none;border:0;cursor:pointer}
-#scene{position:fixed;inset:0;transition:opacity .8s var(--ease),transform 1s var(--ease)}
-#scene.away{opacity:0;pointer-events:none}
-#fly{position:fixed;inset:0;width:100%;height:100%;z-index:7;pointer-events:none}
-#cv,#gl{position:absolute;inset:0;width:100%;height:100%;touch-action:none;display:block}
-#cv.grab{cursor:grab}#cv.grabbing{cursor:grabbing}
-
-.stage{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:50px 20px 140px;text-align:center;opacity:0;pointer-events:none;transition:opacity .7s var(--ease)}
-.stage.on{opacity:1;pointer-events:auto}
-.bigc{width:min(92vw,560px);height:min(46svh,420px);display:block}
-.bigc.wait{visibility:hidden}
-h1{font-weight:400;font-size:clamp(30px,7vw,58px);line-height:1.05;margin:0;text-wrap:balance}
-h1 b{font-weight:500;color:var(--p)}
-form{display:flex;gap:12px;align-items:flex-end;width:min(420px,100%)}
-input{flex:1;font:inherit;font-size:22px;color:var(--k);background:transparent;border:0;border-bottom:1.5px solid var(--k);border-radius:0;padding:8px 0;min-height:48px;text-align:center;user-select:text}
-input::placeholder{color:#aaa}
-:focus-visible{outline:2px solid var(--p);outline-offset:4px}
-input:focus-visible{outline:none;border-bottom-color:var(--p)}
-button.pill{font:inherit;font-weight:500;font-size:16px;min-height:48px;padding:10px 24px;border-radius:999px;border:1.5px solid var(--k);background:var(--k);color:var(--w);cursor:pointer;white-space:nowrap}
-button.pill.ghost{background:transparent;color:var(--k)}
-button.pill.pink{background:var(--p);border-color:var(--p);color:var(--k)}
-
-#foot{position:fixed;left:0;right:0;bottom:0;padding:24px 20px max(18px,env(safe-area-inset-bottom));display:flex;flex-direction:column;align-items:center;gap:12px;z-index:8;pointer-events:none}
-#foot>*{pointer-events:auto}
-#say{margin:0;font-size:15px;min-height:1.5em;text-align:center;max-width:28em;background:rgba(255,255,255,.9);padding:0 8px;border-radius:4px}
-#say.shake{animation:shake .4s}
-@keyframes shake{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
-#scroll{width:50px;height:50px;border-radius:50%;border:1.5px solid var(--k);background:var(--w);color:var(--k);display:grid;place-items:center;cursor:pointer;padding:0}
-#scroll svg{width:16px;height:16px;animation:nudge 1.6s ease-in-out infinite}
-#scroll.ready{background:var(--k);color:var(--w)}
-@keyframes nudge{0%,100%{transform:translateY(-3px)}50%{transform:translateY(4px)}}
-@media(min-width:1024px){#say{font-size:18px}button.pill{font-size:18px;min-height:54px;padding:12px 30px}input{font-size:26px}}
-@media(prefers-reduced-motion:reduce){#scroll svg{animation:none}#scene,.stage,.bigc{transition-duration:.01s}}
-</style>
-</head>
-<body>
-
-<p id="cd" role="timer" aria-live="off" hidden></p>
-<button id="reset" type="button" aria-label="Vorschau zurücksetzen" title="Vorschau zurücksetzen">↺</button>
-<div id="scene"><canvas id="gl" aria-hidden="true"></canvas><canvas id="cv" aria-label="Platz mit Avataren"></canvas></div>
-
-<section class="stage" id="nameStage" aria-live="polite">
-  <canvas class="bigc" id="nameC"></canvas>
-  <form id="nameForm">
-    <input id="nameIn" placeholder="Dein Name" autocomplete="given-name" maxlength="24" aria-label="Dein Name">
-    <button class="pill" type="submit">Fertig</button>
-  </form>
-</section>
-
-<section class="stage" id="resStage" aria-live="polite">
-  <canvas class="bigc" id="resC"></canvas>
-  <h1 id="resTxt"></h1>
-  <button class="pill ghost" type="button" id="resBack">Zurück zum Platz</button>
-</section>
-
-<canvas id="fly" aria-hidden="true"></canvas>
-<button id="info" type="button" aria-label="Infos zum Wichteln" aria-haspopup="dialog"></button>
-<dialog id="faq" aria-labelledby="faqT">
-  <h2 id="faqT">Wichteln 2026</h2>
-  <dl>
-    <div><dt>Datum</dt><dd>Samstag, 26. Dezember 2026</dd></div>
-    <div><dt>Zeit</dt><dd>Ab 20:00 Uhr</dd></div>
-    <div><dt>Ort</dt><dd>In Zürich. Der genaue Ort folgt.</dd></div>
-    <div><dt>Anmeldung</dt><dd>Bis 1. Dezember, 12:00 Uhr</dd></div>
-    <div><dt>Auslosen</dt><dd>Nach dem Anmeldeschluss tippst du auf Auslosen und siehst, wen du beschenkst. Behalte es für dich.</dd></div>
-  </dl>
-  <button class="pill" type="button" id="faqClose">Schliessen</button>
-</dialog>
-<div id="foot">
-  <button class="pill pink" type="button" id="drawBtn" hidden>Auslosen</button>
-  <button id="scroll" type="button" aria-label="Weiter"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1v13M2.5 8.5 8 14l5.5-5.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
-  <p id="say" role="status"></p>
-</div>
-
-<script>
 {
 const $ = id => document.getElementById(id);
 const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const PINK = '#ff4fa8', INK = '#000', PAPER = '#fff';
 const N = 24, FREE = 6, KEY = 'wichteln-v3';
 /* Anmeldung offen bis 1. Dezember, 12 Uhr (Zürich). Zum Testen: ?phase=los oder ?phase=offen */
-const DEADLINE = new Date('2026-12-01T12:00:00+01:00').getTime();
-const PHASE = new URLSearchParams(location.search).get('phase');
-const isOpen = () => PHASE === 'los' ? false : PHASE === 'offen' ? true : Date.now() < DEADLINE;
+let DEADLINE = new Date('2026-12-01T12:00:00+01:00').getTime(), SKEW = 0;
+const srvNow = () => Date.now() + SKEW;
+const isOpen = () => srvNow() < DEADLINE;
 
 /* ---------- Zustand der Vorschau (später Netlify) ---------- */
-const fresh = () => ({ claims:{2:'Lena',5:'Marco',9:'Joana',11:'Sami'}, me:null, draws:{} });
-let S;
-try { S = JSON.parse(localStorage.getItem(KEY)) } catch(e) {}
-if (!S || !S.claims) S = fresh();
-const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)) } catch(e) {} };
+/* Zustand kommt vom Server. Auf dem Gerät liegt nur: welche Figur, ein geheimer Schlüssel und der Code */
+let S = { claims: {}, me: null, draws: {} };
+const IDK = 'wichteln26-id';
+let ID = null; try { ID = JSON.parse(localStorage.getItem(IDK)); } catch (e) {}
+if (!ID || typeof ID.token !== 'string' || !Number.isInteger(ID.fig)) ID = null;
+const saveId = () => { try { ID ? localStorage.setItem(IDK, JSON.stringify(ID)) : localStorage.removeItem(IDK); } catch (e) {} };
+const save = () => {};
+async function api(path, body){
+  const r = await fetch('api/' + path, body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store' } : { cache: 'no-store' });
+  let d = null; try { d = await r.json(); } catch (e) {}
+  if (!r.ok) { const err = new Error((d && d.error) || 'Keine Verbindung. Versuch es gleich nochmals.'); err.status = r.status; throw err; }
+  return d;
+}
+const NET = 'Keine Verbindung. Versuch es gleich nochmals.';
+async function refresh(){
+  const d = await api('state');
+  SKEW = d.now - Date.now(); DEADLINE = d.deadline;
+  const c = {}; for (const k in d.claims) c[Number(k)] = d.claims[k];
+  S.claims = c;
+  if (ID && S.me == null) {
+    try { const m = await api('me', ID); S.me = m.fig; } catch (e) { if (e.status === 401) { ID = null; saveId(); } }
+  }
+  if (S.me != null && S.claims[S.me] == null) { S.me = null; ID = null; saveId(); }
+}
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 /* Aussehen: Oberteil, Hose, Frisur, Statur */
@@ -139,13 +46,6 @@ function wantedFigs(){
   if (!isOpen()) return claimed;
   const free = []; for (let i = 0; i < N && free.length < FREE && claimed.length + free.length < N; i++) if (S.claims[i] == null) free.push(i);
   return claimed.concat(free).sort((a, b) => a - b);
-}
-/* geschlossene Kette: jeder beschenkt genau eine andere Person (später auf dem Server) */
-function ensureChain(){
-  const ids = Object.keys(S.claims).map(Number);
-  if (S.chain && ids.every(i => S.chain[i] != null) && Object.keys(S.chain).length === ids.length) return;
-  for (let k = ids.length - 1; k > 0; k--) { const j = Math.floor(Math.random() * (k + 1)); [ids[k], ids[j]] = [ids[j], ids[k]]; }
-  S.chain = {}; ids.forEach((g, k) => S.chain[g] = ids[(k + 1) % ids.length]); save();
 }
 const fig = i => Fs.find(F => F.i === i);
 
@@ -1270,8 +1170,9 @@ function tickCd(){
   el.hidden = !show; if (show) el.innerHTML = `Anmeldeschluss in <b>${l}</b>`;
 }
 setInterval(tickCd, 250);
-let wasOpen = isOpen();
+let wasOpen = true, busy = false;
 function phaseTick(){
+  if (!Fs.length) return;
   /* Anmeldeschluss erreicht, während die Seite offen ist: freie Figuren gehen, Auslosen geht los */
   if (wasOpen && !isOpen()) { wasOpen = false; if (view === 'name') { sel = null; } syncFigs(); setView(S.me != null ? 'lobby' : 'pick'); return; }
 }
@@ -1280,14 +1181,16 @@ function say(t, shake){ const el = $('say'); el.textContent = t; if (shake) { el
 function setView(v, quiet){
   view = v;
   const open = isOpen(), cd = '';
-  $('scene').classList.toggle('away', v === 'name' || v === 'result');
+  $('scene').classList.toggle('away', v === 'name' || v === 'result' || v === 'code');
+  $('codeStage').classList.toggle('on', v === 'code');
   $('nameStage').classList.toggle('on', v === 'name');
   $('resStage').classList.toggle('on', v === 'result');
   $('scroll').hidden = v !== 'pick' || !open;
   $('info').hidden = v !== 'pick' && v !== 'lobby';
   $('drawBtn').hidden = v !== 'lobby' || open;
-  if (v === 'pick') say(!open ? 'Die Anmeldung ist geschlossen. Ausgelost wird unter den Angemeldeten.' : sel == null ? 'Wähle deinen Avatar. Tippe auf eine schwarze Figur.' + cd : 'Gute Wahl. Scrolle weiter.');
-  if (v === 'name') { say('Trag deinen Namen ein.'); setTimeout(() => $('nameIn').focus(), RM ? 0 : 700); }
+  if (v === 'pick') say(!open ? 'Die Anmeldung ist geschlossen. Schon dabei? Tippe auf deine Figur.' : sel == null ? 'Wähle deinen Avatar. Tippe auf eine schwarze Figur.' + cd : 'Gute Wahl. Scrolle weiter.');
+  if (v === 'name') { $('nameForm').hidden = false; $('pinBox').hidden = true; say('Trag deinen Namen ein.'); setTimeout(() => $('nameIn').focus(), RM ? 0 : 700); }
+  if (v === 'code') { say('Gib deinen Code ein.'); setTimeout(() => $('codeIn').focus(), RM ? 0 : 700); }
   if (v === 'lobby') {
     const mine = S.draws[S.me];
     $('drawBtn').textContent = mine != null ? 'Mein Los ansehen' : 'Auslosen';
@@ -1299,8 +1202,11 @@ function setView(v, quiet){
   $('scroll').classList.toggle('ready', sel != null);
 }
 function tap(F){
-  if (view !== 'pick' || !isOpen()) return;
-  if (S.claims[F.i] != null) { say(`Dieser Avatar gehört schon ${S.claims[F.i]}. Nimm eine schwarze Figur.`, true); return; }
+  if (view !== 'pick') return;
+  if (!isOpen() && S.claims[F.i] == null) return;
+  if (S.claims[F.i] != null) {
+    if (S.me == null) { sel = F.i; $('codeTxt').textContent = `Das ist ${S.claims[F.i]}. Bist du das? Gib deinen Code ein.`; $('codeIn').value = ''; setView('code'); startFly('in', [{ F, wave: true }], $('codeC')); return; }
+    say(`Dieser Avatar gehört schon ${S.claims[F.i]}. Nimm eine schwarze Figur.`, true); return; }
   sel = F.i; F.pause = 0; setView('pick');
 }
 
@@ -1369,7 +1275,7 @@ function next(){
   $('nameIn').value = ''; setView('name');
   startFly('in', [{ F: fig(sel), wave: true }], $('nameC'));
 }
-function back(){ if (view !== 'name' || $('faq').open) return; setView('pick'); startFly('out', [{ F: fig(sel), wave: true }], $('nameC')); }
+function back(){ if ((view !== 'name' && view !== 'code') || $('faq').open || busy) return; const c = view === 'name' ? $('nameC') : $('codeC'); setView('pick'); startFly('out', [{ F: fig(sel), wave: true }], c); if (S.claims[sel] != null) sel = null; }
 $('scroll').addEventListener('click', next);
 let lockW = 0;
 addEventListener('wheel', e => { const now = Date.now(); if (now < lockW || Math.abs(e.deltaY) < 20) return; lockW = now + 1000; e.deltaY > 0 ? next() : back(); }, {passive:true});
@@ -1385,9 +1291,32 @@ $('nameForm').addEventListener('submit', e => {
   if (!n) { say('Bitte trag zuerst deinen Namen ein.', true); return; }
   if (Object.values(S.claims).some(c => c.toLowerCase() === n.toLowerCase())) { say(n + ' ist schon auf dem Platz. Nimm zum Beispiel noch den ersten Buchstaben vom Nachnamen dazu.', true); return; }
   if (!isOpen()) { sel = null; setView('pick'); return; }
-  S.claims[sel] = n; S.me = sel; sel = null; save(); $('nameIn').blur(); syncFigs(); setView('lobby');
-  startFly('out', [{ F: fig(S.me), wave: true }], $('nameC'));
+  if (busy) return; busy = true; say('Einen Moment …');
+  const f0 = sel;
+  api('join', { fig: f0, name: n }).then(d => {
+    ID = { fig: d.fig, token: d.token, pin: d.pin }; saveId();
+    S.claims[d.fig] = d.name; S.me = d.fig; sel = d.fig; $('nameIn').blur(); syncFigs(); updateMyCode();
+    /* den Code einmal gross zeigen */
+    $('nameForm').hidden = true; $('pinTxt').textContent = d.pin; $('pinBox').hidden = false;
+    say('Merk dir deinen Code.'); setTimeout(() => $('pinOk').focus(), 50);
+  }).catch(err => {
+    say(err.message || NET, true);
+    if (err.status === 409 && /Figur/.test(err.message)) refresh().then(() => { syncFigs(); }).catch(() => {});
+  }).finally(() => { busy = false; });
 });
+$('pinOk').addEventListener('click', () => { sel = null; setView('lobby'); startFly('out', [{ F: fig(S.me), wave: true }], $('nameC')); });
+$('codeForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const pin = $('codeIn').value.trim();
+  if (!/^\d{4}$/.test(pin)) { say('Der Code hat 4 Ziffern.', true); return; }
+  if (busy || sel == null) return; busy = true; say('Einen Moment …');
+  const f0 = sel;
+  api('recover', { fig: f0, pin }).then(d => {
+    ID = { fig: d.fig, token: d.token, pin }; saveId(); S.me = d.fig; updateMyCode();
+    $('codeIn').blur(); sel = null; setView('lobby'); startFly('out', [{ F: fig(S.me), wave: true }], $('codeC'));
+  }).catch(err => { say(err.message || NET, true); }).finally(() => { busy = false; });
+});
+function updateMyCode(){ const has = !!(ID && ID.pin); $('myCodeRow').hidden = !has; $('myCode').textContent = has ? ID.pin : ''; }
 function showResult(){
   const r = S.draws[S.me];
   $('resTxt').innerHTML = `Du beschenkst <b>${esc(S.claims[r])}</b>`;
@@ -1396,41 +1325,51 @@ function showResult(){
 }
 $('drawBtn').addEventListener('click', () => {
   if (S.draws[S.me] != null) { showResult(); return; }
-  if (isOpen()) return;
+  if (isOpen() || busy || !ID) return;
   const pool = eligible();
   if (!pool.length) { say('Es hat sich nur eine Person angemeldet, darum gibt es nichts auszulosen.', true); return; }
-  ensureChain();
-  const pickI = S.chain[S.me];
+  busy = true; $('drawBtn').disabled = true;
+  api('me', ID).then(m => {
+    if (m.target == null) { busy = false; $('drawBtn').disabled = false; say('Die Auslosung ist noch nicht bereit. Versuch es gleich nochmals.', true); return; }
+    if (m.targetName) S.claims[m.target] = m.targetName;
+    runDraw(pool, m.target);
+  }).catch(err => { busy = false; $('drawBtn').disabled = false; say(err.message || NET, true); });
+});
+function runDraw(pool, pickI){
   $('drawBtn').disabled = true;
   const hops = RM ? [] : Array.from({length: 9}, (_, k) => pool[k % pool.length]).concat(pickI);
   let k = 0;
   const tick = () => {
     Fs.forEach(F => F.hit = false);
     if (k < hops.length) { const H = fig(hops[k]); if (H) H.hit = true; k++; setTimeout(tick, 90 + k * 22); return; }
-    S.draws[S.me] = pickI; save(); $('drawBtn').disabled = false;
+    S.draws[S.me] = pickI; busy = false; $('drawBtn').disabled = false;
     setTimeout(showResult, RM ? 0 : 300);
   };
   tick();
-});
+}
 $('info').addEventListener('click', () => $('faq').showModal());
 $('faqClose').addEventListener('click', () => $('faq').close());
 $('faq').addEventListener('click', e => { if (e.target === $('faq')) $('faq').close(); });
 $('resBack').addEventListener('click', () => { setView('lobby'); startFly('out', [{ F: fig(S.me), turn: -.35 }, { F: fig(S.draws[S.me]), wave: true, turn: .35 }], $('resC')); });
-$('reset').addEventListener('click', () => { S = fresh(); sel = null; save(); build(); setView('pick'); });
 
 function loop(t){
   const dt = last ? Math.min(.04, (t - last) / 1000) : 0; last = t; clock += dt;
   if (view === 'pick' || view === 'lobby' || FLY) render(dt);
   if (view === 'name' && sel != null) drawBig($('nameC'), [{ F: fig(sel), wave: true }]);
+  if (view === 'code' && sel != null) drawBig($('codeC'), [{ F: fig(sel), wave: true }]);
   if (view === 'result') drawBig($('resC'), [{ F: fig(S.me), wave: false, turn: -.35 }, { F: fig(S.draws[S.me]), wave: true, turn: .35 }]);
   drawFly(dt);
   requestAnimationFrame(loop);
 }
+if (location.hostname === 'localhost') window.__dbg = { Fs: () => Fs, S: () => S };
 let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(build, 200); });
-(document.fonts ? document.fonts.load('700 100px Jost').catch(() => {}) : Promise.resolve()).then(() => {
+/* Start: Schrift laden, Stand vom Server holen; danach alle paar Sekunden nachfragen, solange die Seite sichtbar ist */
+const firstLoad = () => refresh().catch(() => new Promise(r => setTimeout(r, 2500)).then(firstLoad));
+say('Einen Moment …');
+Promise.all([document.fonts ? document.fonts.load('700 100px Jost').catch(() => {}) : null, firstLoad()]).then(() => {
+  wasOpen = isOpen(); updateMyCode();
   build(); setView(S.me != null ? 'lobby' : 'pick'); requestAnimationFrame(loop);
+  setInterval(() => { if (document.visibilityState === 'visible' && (view === 'pick' || view === 'lobby') && !busy) refresh().then(syncFigs).catch(() => {}); }, 12000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refresh().then(syncFigs).catch(() => {}); });
 });
 }
-</script>
-</body>
-</html>

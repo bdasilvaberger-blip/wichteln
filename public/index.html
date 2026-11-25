@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wichteln</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="preload" href="fonts/jost-700.woff2" as="font" type="font/woff2" crossorigin>
+<script src="three.min.js" defer></script>
+<script src="app.js" defer></script>
+<style>
+@font-face{font-family:Jost;font-weight:400;font-display:swap;src:url(fonts/jost-400.woff2) format('woff2')}
+@font-face{font-family:Jost;font-weight:500;font-display:swap;src:url(fonts/jost-500.woff2) format('woff2')}
+@font-face{font-family:Jost;font-weight:700;font-display:swap;src:url(fonts/jost-700.woff2) format('woff2')}
+/* VOICE: gezeichnet, ruhig, mit Witz; reine Strichzeichnung in Schwarz auf Weiss, ein Pink
+   IDEA: ein Platz von schräg oben; die Buchstaben sind Geschenkblöcke, auf die man klettert
+   PICTURE: ein einziger Canvas; Buchstaben extrudiert mit Kontur, Figuren mit 3D Skelett
+   COLOUR and TYPE: Weiss, Schwarz, Pink #ff4fa8; Jost als Futura Ersatz
+   LAYOUT: Vollbild; unten immer eine Zeile, die sagt, was zu tun ist */
+:root{color-scheme:light;--k:#000;--w:#fff;--p:#ff4fa8;--mid:#777;--ease:cubic-bezier(.76,0,.18,1)}
+*{box-sizing:border-box;min-width:0}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{background:var(--w);color:var(--k);font:400 16px/1.5 "Jost","Futura","Century Gothic",system-ui,sans-serif;overflow:hidden;overscroll-behavior:none;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+#cd{position:fixed;top:max(10px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:9;margin:0;padding:10px 20px;border:1.5px solid var(--k);border-radius:999px;background:var(--w);color:var(--k);font-size:15px;line-height:1.2;white-space:nowrap;font-variant-numeric:tabular-nums;pointer-events:none}
+#cd b{font-weight:500}
+@media(min-width:1024px){#cd{font-size:18px;padding:12px 26px}}
+#info{position:fixed;z-index:6;background:transparent;border:0;padding:0;border-radius:12px;pointer-events:none}
+#cv.info{cursor:pointer}
+#info:focus-visible{outline:2px solid var(--k);outline-offset:2px}
+#info[hidden]{display:none}
+#faq{border:1.5px solid var(--k);border-radius:22px;padding:26px 24px 22px;max-width:min(380px,calc(100vw - 32px));width:100%;color:var(--k);background:var(--w)}
+#faq::backdrop{background:rgba(255,255,255,.75)}
+#faq h2{margin:0 0 16px;font-weight:500;font-size:22px}
+#faq dl{margin:0 0 20px;display:grid;gap:12px}
+#faq dl div{display:grid;grid-template-columns:96px 1fr;gap:10px;align-items:baseline}
+#faq dt{color:var(--mid);font-size:14px}
+#faq dd{margin:0;font-size:16px;line-height:1.35}
+#faq .pill{width:100%}
+@media(min-width:1024px){#faq dd{font-size:17px}#faq h2{font-size:26px}}
+#pinBox,#codeStage .note,#pinBox .note{max-width:26em}
+.note{margin:0;font-size:16px;line-height:1.4}
+#pinBox h1{margin:0 0 10px}
+#pinBox b{font-weight:500;letter-spacing:.08em}
+#codeForm{display:flex;gap:12px;align-items:center;width:min(92vw,360px)}
+#reset{position:fixed;top:max(6px,env(safe-area-inset-top));right:6px;z-index:9;font:inherit;font-size:20px;min-width:44px;min-height:44px;color:var(--mid);background:none;border:0;cursor:pointer}
+#scene{position:fixed;inset:0;transition:opacity .8s var(--ease),transform 1s var(--ease)}
+#scene.away{opacity:0;pointer-events:none}
+#fly{position:fixed;inset:0;width:100%;height:100%;z-index:7;pointer-events:none}
+#cv,#gl{position:absolute;inset:0;width:100%;height:100%;touch-action:none;display:block}
+#cv.grab{cursor:grab}#cv.grabbing{cursor:grabbing}
+
+.stage{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:50px 20px 140px;text-align:center;opacity:0;pointer-events:none;transition:opacity .7s var(--ease)}
+.stage.on{opacity:1;pointer-events:auto}
+.bigc{width:min(92vw,560px);height:min(46svh,420px);display:block}
+.bigc.wait{visibility:hidden}
+h1{font-weight:400;font-size:clamp(30px,7vw,58px);line-height:1.05;margin:0;text-wrap:balance}
+h1 b{font-weight:500;color:var(--p)}
+form{display:flex;gap:12px;align-items:flex-end;width:min(420px,100%)}
+input{flex:1;font:inherit;font-size:22px;color:var(--k);background:transparent;border:0;border-bottom:1.5px solid var(--k);border-radius:0;padding:8px 0;min-height:48px;text-align:center;user-select:text}
+input::placeholder{color:#aaa}
+:focus-visible{outline:2px solid var(--p);outline-offset:4px}
+input:focus-visible{outline:none;border-bottom-color:var(--p)}
+button.pill{font:inherit;font-weight:500;font-size:16px;min-height:48px;padding:10px 24px;border-radius:999px;border:1.5px solid var(--k);background:var(--k);color:var(--w);cursor:pointer;white-space:nowrap}
+button.pill.ghost{background:transparent;color:var(--k)}
+button.pill.pink{background:var(--p);border-color:var(--p);color:var(--k)}
+
+#foot{position:fixed;left:0;right:0;bottom:0;padding:24px 20px max(18px,env(safe-area-inset-bottom));display:flex;flex-direction:column;align-items:center;gap:12px;z-index:8;pointer-events:none}
+#foot>*{pointer-events:auto}
+#say{margin:0;font-size:15px;min-height:1.5em;text-align:center;max-width:28em;background:rgba(255,255,255,.9);padding:0 8px;border-radius:4px}
+#say.shake{animation:shake .4s}
+@keyframes shake{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+#scroll{width:50px;height:50px;border-radius:50%;border:1.5px solid var(--k);background:var(--w);color:var(--k);display:grid;place-items:center;cursor:pointer;padding:0}
+#scroll svg{width:16px;height:16px;animation:nudge 1.6s ease-in-out infinite}
+#scroll.ready{background:var(--k);color:var(--w)}
+@keyframes nudge{0%,100%{transform:translateY(-3px)}50%{transform:translateY(4px)}}
+@media(min-width:1024px){#say{font-size:18px}button.pill{font-size:18px;min-height:54px;padding:12px 30px}input{font-size:26px}}
+@media(prefers-reduced-motion:reduce){#scroll svg{animation:none}#scene,.stage,.bigc{transition-duration:.01s}}
+</style>
+</head>
+<body>
+
+<p id="cd" role="timer" aria-live="off" hidden></p>
+<div id="scene"><canvas id="gl" aria-hidden="true"></canvas><canvas id="cv" aria-label="Platz mit Avataren"></canvas></div>
+
+<section class="stage" id="nameStage" aria-live="polite">
+  <canvas class="bigc" id="nameC"></canvas>
+  <form id="nameForm">
+    <input id="nameIn" placeholder="Dein Name" autocomplete="given-name" maxlength="24" aria-label="Dein Name">
+    <button class="pill" type="submit">Fertig</button>
+  </form>
+  <div id="pinBox" hidden>
+    <h1>Dein Code: <b id="pinTxt"></b></h1>
+    <p class="note">Mit diesem Code findest du dich auf einem anderen Gerät wieder. Mach am besten einen Screenshot.</p>
+    <button class="pill" type="button" id="pinOk">Verstanden</button>
+  </div>
+</section>
+
+<section class="stage" id="codeStage" aria-live="polite">
+  <canvas class="bigc" id="codeC"></canvas>
+  <p class="note" id="codeTxt"></p>
+  <form id="codeForm">
+    <input id="codeIn" placeholder="Code" inputmode="numeric" autocomplete="one-time-code" maxlength="4" pattern="[0-9]{4}" aria-label="Dein 4-stelliger Code">
+    <button class="pill" type="submit">Weiter</button>
+  </form>
+</section>
+
+<section class="stage" id="resStage" aria-live="polite">
+  <canvas class="bigc" id="resC"></canvas>
+  <h1 id="resTxt"></h1>
+  <button class="pill ghost" type="button" id="resBack">Zurück zum Platz</button>
+</section>
+
+<canvas id="fly" aria-hidden="true"></canvas>
+<button id="info" type="button" aria-label="Infos zum Wichteln" aria-haspopup="dialog"></button>
+<dialog id="faq" aria-labelledby="faqT">
+  <h2 id="faqT">Wichteln 2026</h2>
+  <dl>
+    <div><dt>Datum</dt><dd>Samstag, 26. Dezember 2026</dd></div>
+    <div><dt>Zeit</dt><dd>Ab 20:00 Uhr</dd></div>
+    <div><dt>Ort</dt><dd>In Zürich. Der genaue Ort folgt.</dd></div>
+    <div><dt>Anmeldung</dt><dd>Bis 1. Dezember, 12:00 Uhr</dd></div>
+    <div><dt>Auslosen</dt><dd>Nach dem Anmeldeschluss tippst du auf Auslosen und siehst, wen du beschenkst. Behalte es für dich.</dd></div>
+    <div id="myCodeRow" hidden><dt>Dein Code</dt><dd id="myCode"></dd></div>
+  </dl>
+  <button class="pill" type="button" id="faqClose">Schliessen</button>
+</dialog>
+<div id="foot">
+  <button class="pill pink" type="button" id="drawBtn" hidden>Auslosen</button>
+  <button id="scroll" type="button" aria-label="Weiter"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1v13M2.5 8.5 8 14l5.5-5.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
+  <p id="say" role="status"></p>
+</div>
+
+</body>
+</html>
