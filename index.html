@@ -83,7 +83,11 @@ button.pill.pink{background:var(--p);border-color:var(--p);color:var(--k)}
 const $ = id => document.getElementById(id);
 const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const PINK = '#ff4fa8', INK = '#000', PAPER = '#fff';
-const N = 14, KEY = 'wichteln-v2';
+const N = 24, FREE = 6, KEY = 'wichteln-v3';
+/* Anmeldung offen bis Ende 1. Dezember (Zürich). Zum Testen: ?phase=los oder ?phase=offen */
+const DEADLINE = new Date('2026-12-01T23:59:59+01:00').getTime();
+const PHASE = new URLSearchParams(location.search).get('phase');
+const isOpen = () => PHASE === 'los' ? false : PHASE === 'offen' ? true : Date.now() < DEADLINE;
 
 /* ---------- Zustand der Vorschau (später Netlify) ---------- */
 const fresh = () => ({ claims:{2:'Lena',5:'Marco',9:'Joana',11:'Sami'}, me:null, draws:{} });
@@ -95,9 +99,24 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>'
 
 /* Aussehen: Oberteil, Hose, Frisur, Statur */
 const LOOKS = Array.from({length:N}, (_,i) => ({
-  shirt: [1,0,1,1,0,1,0,1,1,0,1,0,1,0][i], pants: [0,1,0,0,1,0,0,0,0,1,0,1,0,1][i],
-  hair: [0,1,2,0,3,1,4,0,2,1,0,3,4,1][i], build: [1,0,.5,1,0,.6,0,.3,1,0,.8,0,.4,1][i], h: [1,.95,.97,1.03,.94,1.02,.96,1,1.04,.95,1,.97,.93,1.01][i]
+  shirt: [1,0,1,1,0,1,0,1,1,0,1,0,1,0][i % 14], pants: [0,1,0,0,1,0,0,0,0,1,0,1,0,1][(i * 3) % 14],
+  hair: [0,1,2,0,3,1,4,0,2,1,0,3,4,1][(i * 5) % 14], build: [1,0,.5,1,0,.6,0,.3,1,0,.8,0,.4,1][(i * 9) % 14], h: [1,.95,.97,1.03,.94,1.02,.96,1,1.04,.95,1,.97,.93,1.01][(i * 11) % 14]
 }));
+/* welche Figuren auf dem Platz sind: alle Angemeldeten, und solange offen 6 freie dazu */
+function wantedFigs(){
+  const claimed = Object.keys(S.claims).map(Number);
+  if (!isOpen()) return claimed;
+  const free = []; for (let i = 0; i < N && free.length < FREE && claimed.length + free.length < N; i++) if (S.claims[i] == null) free.push(i);
+  return claimed.concat(free).sort((a, b) => a - b);
+}
+/* geschlossene Kette: jeder beschenkt genau eine andere Person (später auf dem Server) */
+function ensureChain(){
+  const ids = Object.keys(S.claims).map(Number);
+  if (S.chain && ids.every(i => S.chain[i] != null) && Object.keys(S.chain).length === ids.length) return;
+  for (let k = ids.length - 1; k > 0; k--) { const j = Math.floor(Math.random() * (k + 1)); [ids[k], ids[j]] = [ids[j], ids[k]]; }
+  S.chain = {}; ids.forEach((g, k) => S.chain[g] = ids[(k + 1) % ids.length]); save();
+}
+const fig = i => Fs.find(F => F.i === i);
 
 /* ---------- Projektion: Blick schräg von oben, orthografisch wie eine Zeichnung ---------- */
 const EL = 42 * Math.PI / 180, C = Math.sin(EL), HZ = Math.cos(EL);
@@ -657,7 +676,8 @@ function actPose(F, dt){
 /* ---------- Szene ---------- */
 let Fs = [], view = 'pick', sel = null, last = 0, clock = 0;
 const taken = () => new Set(Object.values(S.draws));
-const eligible = () => Object.keys(S.claims).map(Number).filter(i => i !== S.me && !taken().has(i));
+/* im Topf: nach Anmeldeschluss alle anderen Angemeldeten, bis man sein Los aufgedeckt hat */
+const eligible = () => isOpen() || S.me == null || S.draws[S.me] != null ? [] : Object.keys(S.claims).map(Number).filter(i => i !== S.me);
 const top = () => Hh * .05 + FH * .9, bottom = () => Hh - (mobile() ? 125 : desk() ? 120 : 105);
 function inBounds(F){
   const m = FH * .45;
@@ -677,7 +697,8 @@ function build(){
   const fh2 = Math.round(cl(letters.fs * .43, 30, desk() ? 74 : 60));
   if (Math.abs(fh2 - FH) > 1) { FH = fh2; buildLetters(); for (let n = 0; n < 6 && letters.tooClose; n++) { letters.shrink *= .9; buildLetters(); } }
   buildSpots();
-  Fs = LOOKS.map((_, i) => {
+  Fs = [];
+  wantedFigs().forEach(i => {
     const F = makeFig(i);
     let t = 0;
     do { F.x = FH * .4 + Math.random() * (W - FH * .8); F.g = top() + Math.random() * (bottom() - top()); } while ((!clearAt(-1, F.x, F.g, .3) || Fs.some(o => Math.hypot(o.x - F.x, o.g - F.g) < FH * .5)) && ++t < 60);
@@ -712,6 +733,17 @@ function leanPose(F, dt, held){
   return P;
 }
 const SMOKE = [];
+function syncFigs(){
+  const want = new Set(wantedFigs());
+  for (const F of Fs) if (!want.has(F.i) && !F.leave) { F.leave = true; F.goal = null; F.lean = null; F.goalStage = 0; F.pause = 0; if (F.act) F.act.dur = Math.min(F.act.dur, 1); }
+  for (const i of want) if (!fig(i)) {
+    const F = makeFig(i), side = Math.random() < .5;
+    let g = top() + Math.random() * (bottom() - top());
+    for (let t = 0; t < 40 && !clearAt(-1, side ? FH * .6 : W - FH * .6, g); t++) g = top() + Math.random() * (bottom() - top());
+    F.x = side ? -FH * .6 : W + FH * .6; F.g = g; F.a = side ? 0 : Math.PI; F.surf = -1; F.z0 = 0; F.enter = 2.2;
+    Fs.push(F);
+  }
+}
 function step(F, dt){
   let P;
   const held = view === 'pick' && F.i === sel;
@@ -741,10 +773,10 @@ function step(F, dt){
     const onTop = F.surf >= 0;
     if (onTop) {
       /* oben: stehen, umschauen, dann an derselben Stelle rückwärts hinunter */
-      F.topT = (F.topT || 0) + dt;
+      F.topT = (F.topT || 0) + dt; if (F.leave) F.topWait = 0;
       if (F.topT > (F.topWait || 3) && F.spot && !held) { actFromPlan(F, F.spot, true); F.topT = 0; F.spot = null; }
     }
-    if (!onTop && !F.goal && !held && letters.spots.length && Math.random() < dt * .1) {
+    if (!onTop && !F.goal && !held && !F.leave && !(F.enter > 0) && letters.spots.length && Math.random() < dt * .1) {
       /* nur Stellen mit freiem Weg, freiem Einstieg und einem Buchstaben, auf dem niemand ist */
       const sight = sp => { const dx = sp.S2.x - F.x, dg = sp.S2.g - F.g, n = Math.ceil(Math.hypot(dx, dg / C) / (FH * .15)); for (let k = 1; k <= n; k++) if (!clearAt(-1, F.x + dx * k / n, F.g + dg * k / n)) return false; return true; };
       const busy = sp => Fs.some(o => o !== F && (o.goal === sp || o.spot === sp || o.surf === sp.id || (o.spot && o.spot.id === sp.id) || (o.goal && o.goal.id === sp.id) || (o.act && (o.act.to === sp.id || o.act.from === sp.id)) || Math.hypot(o.x - sp.S.x, (o.g - sp.S.g) / C) < FH * .6 || Math.hypot(o.x - sp.S2.x, (o.g - sp.S2.g) / C) < FH * .5));
@@ -784,14 +816,15 @@ function step(F, dt){
       if (d < FH * .55 && d > 0) { const side = Math.sin(Math.atan2(dg, dx) - F.a); turn -= Math.sign(side || 1) * 2.4 * (1 - d / (FH * .55)) * (F.goal ? .4 : 1); }
     }
     const cx = W / 2 - F.x, cg = (Hh * .5 - F.g) / C;
-    if (!inBounds(F)) { const ta = Math.atan2(cg, cx); let d = ta - F.a; d = Math.atan2(Math.sin(d), Math.cos(d)); turn += d * 3; }
+    if (F.enter > 0) F.enter -= dt;
+    if (!inBounds(F) && !F.leave && !(F.enter > 0)) { const ta = Math.atan2(cg, cx); let d = ta - F.a; d = Math.atan2(Math.sin(d), Math.cos(d)); turn += d * 3; }
     const moving = !(F.pause > 0 || held || RM || onTop || F.goalStage);
     if (F.pause > 0) F.pause -= dt;
     if (held) { let d = Math.PI / 2 - F.a; d = Math.atan2(Math.sin(d), Math.cos(d)); F.a += d * Math.min(1, dt * 5); }
     const clear = (x, g) => clearAt(F.surf, x, g);
     /* Richtung wählen: gewünschte Richtung, sonst die nächste freie; nie gegen eine Wand laufen */
     const free = (a2, lim = 9) => { for (const L of [.12, .26, .42]) if (L <= lim && !clear(F.x + Math.cos(a2) * L * FH, F.g + Math.sin(a2) * L * FH * C)) return false; return true; };
-    let want = F.want;
+    let want = F.want * (F.leave ? 1.5 : 1);
     if (moving) {
       /* steht die Figur fest, sucht sie die offenste Richtung und geht dorthin */
       if (F.escT > 0) F.escT -= dt;
@@ -799,7 +832,7 @@ function step(F, dt){
         if (F.stillT > .8) { let best = F.a, bn = -1; for (let k = 0; k < 16; k++) { const a2 = k * Math.PI / 8; let n = 0; for (const L of [.2, .4, .6, .8, 1]) { if (clear(F.x + Math.cos(a2) * L * FH, F.g + Math.sin(a2) * L * FH * C)) n++; else break; } if (n > bn) { bn = n; best = a2; } }
           F.escA = best; F.escT = 1.2; F.stillT = 0; F.goal = null; F.goalStage = 0; } }
       else F.stillT = 0;
-      const desired = F.escT > 0 ? F.escA : F.goal ? Math.atan2((F.goal.S2.g - F.g) / C, F.goal.S2.x - F.x) : F.a + cl(turn, -4, 4) * dt;
+      const desired = F.leave ? (F.x < W / 2 ? Math.PI : 0) : F.enter > 0 ? (F.x < W / 2 ? 0 : Math.PI) : F.escT > 0 ? F.escA : F.goal ? Math.atan2((F.goal.S2.g - F.g) / C, F.goal.S2.x - F.x) : F.a + cl(turn, -4, 4) * dt;
       if (F.goal && F.escT <= 0) want *= cl(Math.hypot(F.goal.S2.x - F.x, (F.goal.S2.g - F.g) / C) / (FH * .7), .3, 1);
       let pick = null, da0 = 0;
       for (const da of [0, .35, -.35, .7, -.7, 1.1, -1.1, 1.6, -1.6, 2.2, -2.2, Math.PI]) {
@@ -817,7 +850,7 @@ function step(F, dt){
       /* steht die Figur knapp an einer Wand (nach dem Klettern), darf sie sich wegbewegen */
       if (clear(nx, ng) || (idAt(nx, ng) === F.surf && (free(F.a) || (F.escT > 0 && clearAt(F.surf, nx, ng, .1))))) { F.x = nx; F.g = ng; }
       else F.sp *= .5;
-      if (!F.goal && Math.random() < dt * .05) F.pause = 1 + Math.random() * 2.5;
+      if (!F.goal && !F.leave && !(F.enter > 0) && Math.random() < dt * .05) F.pause = 1 + Math.random() * 2.5;
     }
     /* Abstand halten: Figuren stehen nie ineinander */
     if (!F.goalStage) for (const o of Fs) if (o !== F && !o.drag && (o.act || o.surf === F.surf)) {
@@ -854,11 +887,14 @@ function render(dt){
   c.setTransform(DPR, 0, 0, DPR, 0, 0);
   c.clearRect(0, 0, W, Hh);
   for (const F of Fs) {
+    if (F.leave) F.pause = 0;
     const P = step(F, dt), J = solveFig(F, P);
     const base = { x: F.x, gy: F.g, z: baseZ(F) + (F.dropZ || 0) * FH };
     figTo3D(F, J, base);
     F.base = base;
   }
+  /* wer den Platz verlassen hat, verschwindet */
+  for (let i = Fs.length - 1; i >= 0; i--) { const F = Fs[i]; if (F.leave && (F.x < -FH * .8 || F.x > W + FH * .8 || (F.surf >= 0 && !F.spot && !F.act))) Fs.splice(i, 1); }
   for (const k in GL.parts) { const P = GL.parts[k]; P.c.count = P.nc; P.sp.count = P.ns; P.c.instanceMatrix.needsUpdate = P.sp.instanceMatrix.needsUpdate = true; }
   /* erst Buchstaben allein (für die Konturen), dann alles (für die Figuren mit Verdeckung) */
   const figs = []; for (const k in GL.parts) figs.push(GL.parts[k].c, GL.parts[k].sp);
@@ -939,27 +975,40 @@ function drawBig(canvas, list){
 }
 
 /* ---------- Ablauf ---------- */
+function left(){
+  const ms = DEADLINE - Date.now(); if (ms <= 0) return '';
+  const m = Math.floor(ms / 60000), d = Math.floor(m / 1440), h = Math.floor(m % 1440 / 60), mi = m % 60, se = Math.floor(ms / 1000) % 60;
+  return d ? `${d} ${d === 1 ? 'Tag' : 'Tage'} ${h} Std.` : h ? `${h} Std. ${mi} Min.` : `${mi} Min. ${String(se).padStart(2, '0')} Sek.`;
+}
+let wasOpen = isOpen();
+function phaseTick(){
+  /* Anmeldeschluss erreicht, während die Seite offen ist: freie Figuren gehen, Auslosen geht los */
+  if (wasOpen && !isOpen()) { wasOpen = false; if (view === 'name') { sel = null; } syncFigs(); setView(S.me != null ? 'lobby' : 'pick'); return; }
+  if (isOpen() && (view === 'pick' || view === 'lobby')) setView(view, true);
+}
+setInterval(phaseTick, 1000);
 function say(t, shake){ const el = $('say'); el.textContent = t; if (shake) { el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); } }
-function setView(v){
+function setView(v, quiet){
   view = v;
+  const open = isOpen(), cd = open && left() ? ` Noch ${left().replace(/\.$/, '')}.` : '';
   $('scene').classList.toggle('away', v === 'name' || v === 'result');
   $('nameStage').classList.toggle('on', v === 'name');
   $('resStage').classList.toggle('on', v === 'result');
-  $('scroll').hidden = v !== 'pick';
-  $('drawBtn').hidden = v !== 'lobby';
-  if (v === 'pick') say(sel == null ? 'Wähle deinen Avatar. Tippe auf eine schwarze Figur.' : 'Gute Wahl. Scrolle weiter.');
+  $('scroll').hidden = v !== 'pick' || !open;
+  $('drawBtn').hidden = v !== 'lobby' || open;
+  if (v === 'pick') say(!open ? 'Die Anmeldung ist geschlossen. Ausgelost wird unter den Angemeldeten.' : sel == null ? 'Wähle deinen Avatar. Tippe auf eine schwarze Figur.' + cd : 'Gute Wahl. Scrolle weiter.');
   if (v === 'name') { say('Trag deinen Namen ein.'); setTimeout(() => $('nameIn').focus(), RM ? 0 : 700); }
   if (v === 'lobby') {
     const mine = S.draws[S.me];
     $('drawBtn').textContent = mine != null ? 'Mein Los ansehen' : 'Auslosen';
-    say(mine != null ? 'Du hast dein Los schon gezogen.' :
-      eligible().length ? 'Wer ein Geschenk über dem Kopf hat, ist noch im Topf. Tippe auf Auslosen.' : 'Noch niemand im Topf. Warte, bis sich die anderen angemeldet haben.');
+    if (open) say('Du bist dabei. Ausgelost wird nach Anmeldeschluss am 1. Dezember.' + cd);
+    else say(mine != null ? 'Du hast dein Los schon gezogen.' : 'Die Anmeldung ist zu. Alle mit Geschenk sind im Topf. Tippe auf Auslosen.');
   }
   if (v === 'result') say('Psst. Behalte es für dich.');
   $('scroll').classList.toggle('ready', sel != null);
 }
 function tap(F){
-  if (view !== 'pick') return;
+  if (view !== 'pick' || !isOpen()) return;
   if (S.claims[F.i] != null) { say(`Dieser Avatar gehört schon ${S.claims[F.i]}. Nimm eine schwarze Figur.`, true); return; }
   sel = F.i; F.pause = 0; setView('pick');
 }
@@ -1006,7 +1055,7 @@ cv.addEventListener('pointercancel', endDrag);
 
 /* Weiter: Knopf, Scrollen, Wischen */
 function next(){
-  if (view !== 'pick') return;
+  if (view !== 'pick' || !isOpen()) return;
   if (sel == null) { say('Wähle zuerst deinen Avatar. Tippe auf eine schwarze Figur.', true); return; }
   $('nameIn').value = ''; setView('name');
 }
@@ -1025,7 +1074,8 @@ $('nameForm').addEventListener('submit', e => {
   if (sel == null) { setView('pick'); return; }
   if (!n) { say('Bitte trag zuerst deinen Namen ein.', true); return; }
   if (Object.values(S.claims).some(c => c.toLowerCase() === n.toLowerCase())) { say(n + ' ist schon auf dem Platz. Nimm zum Beispiel noch den ersten Buchstaben vom Nachnamen dazu.', true); return; }
-  S.claims[sel] = n; S.me = sel; sel = null; save(); $('nameIn').blur(); setView('lobby');
+  if (!isOpen()) { sel = null; setView('pick'); return; }
+  S.claims[sel] = n; S.me = sel; sel = null; save(); $('nameIn').blur(); syncFigs(); setView('lobby');
 });
 function showResult(){
   const r = S.draws[S.me];
@@ -1034,15 +1084,17 @@ function showResult(){
 }
 $('drawBtn').addEventListener('click', () => {
   if (S.draws[S.me] != null) { showResult(); return; }
+  if (isOpen()) return;
   const pool = eligible();
-  if (!pool.length) { say('Noch niemand im Topf. Warte, bis sich die anderen angemeldet haben.', true); return; }
-  const pickI = pool[Math.floor(Math.random() * pool.length)];
+  if (!pool.length) { say('Es hat sich nur eine Person angemeldet, darum gibt es nichts auszulosen.', true); return; }
+  ensureChain();
+  const pickI = S.chain[S.me];
   $('drawBtn').disabled = true;
   const hops = RM ? [] : Array.from({length: 9}, (_, k) => pool[k % pool.length]).concat(pickI);
   let k = 0;
   const tick = () => {
     Fs.forEach(F => F.hit = false);
-    if (k < hops.length) { Fs[hops[k]].hit = true; k++; setTimeout(tick, 90 + k * 22); return; }
+    if (k < hops.length) { const H = fig(hops[k]); if (H) H.hit = true; k++; setTimeout(tick, 90 + k * 22); return; }
     S.draws[S.me] = pickI; save(); $('drawBtn').disabled = false;
     setTimeout(showResult, RM ? 0 : 300);
   };
@@ -1054,8 +1106,8 @@ $('reset').addEventListener('click', () => { S = fresh(); sel = null; save(); bu
 function loop(t){
   const dt = last ? Math.min(.04, (t - last) / 1000) : 0; last = t; clock += dt;
   if (view === 'pick' || view === 'lobby') render(dt);
-  if (view === 'name' && sel != null) drawBig($('nameC'), [{ F: Fs[sel], wave: true }]);
-  if (view === 'result') drawBig($('resC'), [{ F: Fs[S.me], wave: false, turn: -.35 }, { F: Fs[S.draws[S.me]], wave: true, turn: .35 }]);
+  if (view === 'name' && sel != null) drawBig($('nameC'), [{ F: fig(sel), wave: true }]);
+  if (view === 'result') drawBig($('resC'), [{ F: fig(S.me), wave: false, turn: -.35 }, { F: fig(S.draws[S.me]), wave: true, turn: .35 }]);
   requestAnimationFrame(loop);
 }
 let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(build, 200); });
