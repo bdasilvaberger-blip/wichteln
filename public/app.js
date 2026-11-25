@@ -1332,6 +1332,7 @@ function setView(v, quiet){
   $('scene').classList.toggle('away', v === 'name' || v === 'result' || v === 'code');
   $('codeStage').classList.toggle('on', v === 'code');
   $('nameStage').classList.toggle('on', v === 'name');
+  $('stageBack').hidden = v !== 'name' && v !== 'code'; $('stageBack').textContent = v === 'code' ? 'Back' : 'Pick another figure';
   if (v !== 'name' && $('notice').open) $('notice').close();
   $('resStage').classList.toggle('on', v === 'result');
   $('scroll').hidden = v !== 'pick' || !open;
@@ -1467,14 +1468,14 @@ $('nameForm').addEventListener('submit', e => {
     ID = { fig: d.fig, token: d.token, pin: d.pin }; saveId(); (RT.busy || Promise.resolve()).then(rtStart).then(() => rtSend({ t: 'join' }));
     S.claims[d.fig] = d.name; S.me = d.fig; sel = d.fig; $('nameIn').blur(); syncFigs(); updateMyCode();
     /* den Code einmal gross zeigen */
-    $('nameForm').hidden = true; $('pinTxt').textContent = d.pin; $('pinBox').hidden = false; $('nameStage').classList.add('pin');
+    $('nameForm').hidden = true; $('stageBack').hidden = true; $('pinTxt').textContent = d.pin; $('pinBox').hidden = false; $('nameStage').classList.add('pin');
     say('Save your code, then tap Got it.');
   }).catch(err => {
     say(err.message || NET, true);
     if (err.status === 409 && err.status === 409 && /figure/.test(err.message)) refresh().then(() => { syncFigs(); }).catch(() => {});
   }).finally(() => { busy = false; });
 });
-$('nameBack').addEventListener('click', back);
+$('stageBack').addEventListener('click', back);
 /* Aktionstasten: schwarz solange die Figur spielt, der Balken läuft dabei leer */
 const ACTS = [...document.querySelectorAll('#acts button')];
 for (const b of ACTS) b.addEventListener('click', () => { if (view === 'lobby' && isOpen()) { const at = Math.round(srvNow() + LEAD * 1000); if (startTrick(b.dataset.k, fig(S.me), at)) rtSend({ t: 'trick', k: b.dataset.k, at }); } });
@@ -1483,7 +1484,6 @@ function showActs(){
   for (const b of ACTS) { const on = !!T && T.kind === b.dataset.k, p = on ? T.p : 0;
     if (b._p !== p) { b._p = p; b.style.setProperty('--p', p.toFixed(4)); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); } }
 }
-$('codeBack').addEventListener('click', back);
 $('pinOk').addEventListener('click', () => { sel = null; setView('lobby'); startFly('out', [{ F: fig(S.me), wave: true }], $('nameC')); });
 $('codeForm').addEventListener('submit', e => {
   e.preventDefault();

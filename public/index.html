@@ -51,7 +51,8 @@ body{background:var(--w);color:var(--k);font:400 16px/1.5 "Jost","Futura","Centu
 .note{margin:0;font-size:16px;line-height:1.45;max-width:22em;text-wrap:pretty}
 #resTxt{margin-bottom:30px}
 #codeTxt{font-size:clamp(26px,5vw,40px);line-height:1.15;max-width:none;margin-bottom:22px}
-#codeForm{display:flex;gap:12px;align-items:center;width:min(92vw,360px)}
+#nameForm,#codeForm{flex-direction:column;align-items:center;gap:22px;width:min(92vw,360px)}
+#nameForm input,#codeForm input{width:100%;flex:none}
 #pinBox{display:flex;flex-direction:column;align-items:center}
 #pinBox .label{margin:0;font-size:18px;line-height:1.2}
 #pinBox .code{margin:6px 0 18px;font-size:clamp(56px,13vw,92px);line-height:1;font-weight:500;color:var(--p);letter-spacing:.06em;font-variant-numeric:tabular-nums}
@@ -90,7 +91,8 @@ button.pill.pink{background:var(--p);border-color:var(--p);color:var(--k)}
 .dots i{font-style:normal;animation:dot 1.2s infinite}
 .dots i:nth-child(2){animation-delay:.2s}.dots i:nth-child(3){animation-delay:.4s}
 @keyframes dot{0%,60%,100%{opacity:.15}30%{opacity:1}}
-.link{font:inherit;font-size:15px;color:var(--mid);background:none;border:0;padding:10px;margin-top:10px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.link{font:inherit;font-size:15px;color:var(--mid);background:none;border:0;padding:6px 10px;margin-top:-6px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.link[hidden]{display:none}
 #scroll.ready{background:var(--k);color:var(--w)}
 #acts{display:flex;justify-content:center;gap:8px;margin-top:2px}
 #acts[hidden]{display:none}
@@ -116,7 +118,6 @@ button.pill.pink{background:var(--p);border-color:var(--p);color:var(--k)}
     <input id="nameIn" placeholder="Your real name" autocomplete="given-name" maxlength="24" aria-label="Your real name">
     <button class="pill" type="submit">Done</button>
   </form>
-  <button class="link" type="button" id="nameBack">Pick another figure</button>
   <div id="pinBox" hidden>
     <p class="label">Your code</p>
     <p class="code" id="pinTxt"></p>
@@ -132,7 +133,6 @@ button.pill.pink{background:var(--p);border-color:var(--p);color:var(--k)}
     <input id="codeIn" placeholder="Code" inputmode="numeric" autocomplete="one-time-code" maxlength="4" pattern="[0-9]{4}" aria-label="Your 4-digit code">
     <button class="pill" type="submit">Continue</button>
   </form>
-  <button class="link" type="button" id="codeBack">Back</button>
 </section>
 
 <section class="stage" id="resStage" aria-live="polite">
@@ -166,6 +166,7 @@ button.pill.pink{background:var(--p);border-color:var(--p);color:var(--k)}
   <button class="pill pink" type="button" id="drawBtn" hidden>Draw</button>
   <button id="scroll" type="button" aria-label="Continue"><span aria-hidden="true">!</span></button>
   <p id="say" role="status"></p>
+  <button class="link" type="button" id="stageBack" hidden>Pick another figure</button>
   <div id="acts" role="group" aria-label="Play with your avatar" hidden>
     <button type="button" data-k="twerk" aria-pressed="false"><span>Booty shake</span><span class="fill" aria-hidden="true">Booty shake</span></button>
     <button type="button" data-k="roll" aria-pressed="false"><span>Roll around</span><span class="fill" aria-hidden="true">Roll around</span></button>
