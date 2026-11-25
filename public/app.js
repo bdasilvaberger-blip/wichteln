@@ -324,6 +324,14 @@ function figTo3D(F, J, base){
   }
   addSph(P, j.pel, r * 1.15); addSph(P, j.neck, r * 1.15);
   addSph(P, j.headC, .1 * R * J.k);
+  if (F.santa) {
+    /* Bauch, Zipfelmütze, Sack auf dem Rücken */
+    const Pp = GL.parts.p, mid = add(mul(add(J.pel, J.chest), .5), mul(J.fw, .05 * R));
+    addSph(P, w(mid), .095 * R);
+    const hb = add(J.headC, mul(J.up, .08 * R)), tip = add(add(J.headC, mul(J.up, .2 * R)), mul(J.fw, -.09 * R));
+    addCyl(Pp, w(hb), w(tip), .06 * R); addSph(Pp, w(tip), .03 * R);
+    addSph(Pp, w(add(add(J.chest, mul(J.fw, -.12 * R)), mul(J.up, -.02 * R))), .1 * R);
+  }
   F.cig = null;
   if (F.lean && F.lean.smoke && F.lean.b > .3) {
     const dir = add(mul(J.fw, .8), mul(J.rt, -.35)), dl = Math.hypot(dir.x, dir.y, dir.z) || 1;
@@ -695,7 +703,7 @@ function dogStep(dt){
   /* eine Figur in der Nähe streichelt den Hund */
   if (D.mode === 'pet' && (!D.petF || !D.petF.pet)) { D.mode = 'walk'; D.t = 2; D.petF = null; }
   if (D.mode === 'stay' && (!D.petF || !D.petF.trick)) { D.mode = 'walk'; D.t = 2; D.petF = null; }
-  const petOk = F => F.surf < 0 && !F.act && !F.lean && !F.sit && !F.drag && !F.fetch && !F.pickUp && !F.pet && !F.trick && !F.leave && !(F.enter > 0) && !F.flyHide && F.i !== sel && clock > (F.petCool || 0);
+  const petOk = F => !F.santa && F.surf < 0 && !F.act && !F.lean && !F.sit && !F.drag && !F.fetch && !F.pickUp && !F.pet && !F.trick && !F.leave && !(F.enter > 0) && !F.flyHide && F.i !== sel && clock > (F.petCool || 0);
   const dist = F => Math.hypot(F.x - D.x, (F.g - D.g) / C);
   if (D.mode === 'visit' && (!D.vF || !petOk(D.vF) || D.t <= 0)) { D.mode = 'walk'; D.t = 2; D.vF = null; }
   if (D.mode === 'visit' && dist(D.vF) < FH * 1.4) { D.vF.goal = null; D.vF.goalStage = 0; D.vF.pause = Math.max(D.vF.pause || 0, .5); }
@@ -784,7 +792,10 @@ function santaFlight(k){
 function santaStep(dt){
   const now = srvNow(), k = Math.floor(now / SLOT), f = santaFlight(k);
   SANTA.on = false; SANTA.box = null;
-  if (f && now >= f.t0 && now < f.t0 + FLY_MS && !SANTA.popped[k]) {
+  if (SANTA.walker && !Fs.includes(SANTA.walker)) SANTA.walker = null;
+  if (f && f.kind === 'collect' && now >= f.t0 && now < f.t0 + 15000 && !SANTA.popped[k] && !SANTA.walker && !(SANTA.walked && SANTA.walked[k]) && GIFTS.some(G => G.state === 'rest')) spawnWalker(k);
+  if (SANTA.walker) { const F = SANTA.walker; walkerThink(F, dt); if (F.box && !F.leave) { SANTA.on = true; SANTA.k = F.k; SANTA.box = F.box; } }
+  if (f && f.kind === 'drop' && now >= f.t0 && now < f.t0 + FLY_MS && !SANTA.popped[k]) {
     const u = (now - f.t0) / FLY_MS, R = FH * (desk() ? 1.9 : 1.6), span = W + R * 5;
     SANTA.k = k; SANTA.on = true; SANTA.f = f; SANTA.u = u; SANTA.R = R;
     SANTA.x = f.dir > 0 ? -R * 2.2 + span * u : W + R * 2.2 - span * u;
@@ -792,12 +803,11 @@ function santaStep(dt){
     const yScr = top() + FH * .3 + f.row * Math.max(0, fbot() - top() - FH * 1.1) + Math.sin(now / 420) * FH * .08;
     SANTA.g = Hh + FH * 2; SANTA.z = (SANTA.g - yScr) / HZ;
     santaTo3D();
-    /* Geschenke fallen lassen oder einsammeln */
-    if (f.kind === 'drop') for (let i = 0; i < 4; i++) {
+    /* Geschenke fallen lassen */
+    for (let i = 0; i < 4; i++) {
       const at = .18 + i * .19 + (hh(k, 10 + i) - .5) * .06, id = k * 10 + i;
       if (u >= at && !GIFTS.some(G => G.id === id) && !(SANTA.dropped || (SANTA.dropped = {}))[id] && GIFTS.length < 14) { SANTA.dropped[id] = true; dropGift(id, k, i); }
     }
-    else for (const G of GIFTS) if (G.state === 'rest' && Math.abs(G.x - (SANTA.x - f.dir * R * .3)) < R * .5) { G.state = 'up'; G.t = 0; G.fx = G.x; G.fy = G.y; }
   }
   for (const G of GIFTS) {
     if (G.state === 'fall') { G.vy += FH * 9 * dt; G.y += G.vy * dt; if (G.y >= G.landY) { G.y = G.landY; if (G.vy > FH * 2) G.vy = -G.vy * .3; else { G.vy = 0; G.state = 'rest'; } } }
@@ -807,14 +817,33 @@ function santaStep(dt){
   GIFTS = GIFTS.filter(G => !G.gone);
 }
 function dropGift(id, k, i){
-  const f = SANTA.f, R = SANTA.R, x = SANTA.x - f.dir * R * .35, y = SANTA.y + R * .1;
-  /* Landeplatz: Boden oder Buchstabe darunter, sicher unterhalb des Schlittens */
-  let gL = top() + hh(k, 20 + i) * (fbot() - top()), id2 = idAt(x, gL), zt = id2 >= 0 ? hOf(id2) : 0, landY = sy(gL, 0, zt);
-  for (let t = 0; t < 8 && landY < y + FH * .8; t++) { gL = Math.min(fbot(), gL + FH); id2 = idAt(x, gL); zt = id2 >= 0 ? hOf(id2) : 0; landY = sy(gL, 0, zt); }
-  /* tief geflogen: Geschenk landet knapp unter dem Schlitten, sonst gar keins */
-  if (landY < y + FH * .6) { landY = Math.min(y + FH * .9, sy(fbot(), 0, 0)); if (landY < y + FH * .3) return; }
-  if (x < FH * .3 || x > W - FH * .3) return;
-  GIFTS.push({ id, x, y, vy: -FH * .4, landY, state: 'fall', s: 1, spin: (hh(k, 30 + i) - .5) * .6 });
+  const f = SANTA.f, R = SANTA.R, y = SANTA.y + R * .1;
+  /* Landeplatz nur auf freiem Boden, nie auf einem Buchstaben, sicher unterhalb des Schlittens */
+  const x0 = SANTA.x - f.dir * R * .35, gMin = Math.max(top(), y + FH * .5), gMax = fbot() - FH * .1;
+  if (gMin > gMax) return;
+  let spot = null;
+  for (let t = 0; t < 30 && !spot; t++) {
+    const x = x0 + (t ? (hh(k, 40 + t) - .5) * FH * Math.min(3, t * .4) : 0), g = gMin + hh(k, 20 + i + t * 7) * (gMax - gMin);
+    if (x > FH * .4 && x < W - FH * .4 && idAt(x, g) === -1 && clearAt(-1, x, g, .2)) spot = { x, g };
+  }
+  if (!spot) return;
+  GIFTS.push({ id, gift: true, x: spot.x, g: spot.g, y, vy: -FH * .4, landY: spot.g, state: 'fall', s: 1, spin: (hh(k, 30 + i) - .5) * .6 });
+}
+/* Santa zu Fuss: kommt vom Rand, sammelt jedes Geschenk einzeln auf und geht wieder */
+function spawnWalker(k){
+  const F = makeFig(0), side = hh(k, 5) < .5;
+  F.i = -1; F.santa = true; F.k = k; F.look = { h: 1.07, build: 1.6 }; F.want = .85; F.born = srvNow();
+  let g = top() + hh(k, 6) * (fbot() - top());
+  for (let t = 0; t < 40 && !clearAt(-1, side ? FH * .6 : W - FH * .6, g); t++) g = top() + hh(k, 50 + t) * (fbot() - top());
+  F.x = side ? -FH * .6 : W + FH * .6; F.g = g; F.a = side ? 0 : Math.PI; F.surf = -1; F.z0 = 0; F.enter = 1.2;
+  Fs.push(F); SANTA.walker = F; (SANTA.walked = SANTA.walked || {})[k] = true;
+}
+function walkerThink(F, dt){
+  if (F.leave || F.drag) return;
+  F.age = (F.age || 0) + dt; if (F.age > 45) { F.leave = true; F.fetch = null; return; }
+  if (F.enter > 0 || F.fetch || F.pickUp) return;
+  let best = null, bd = 1e9; for (const G of GIFTS) if (G.state === 'rest' && !G.popped && !(F.skipPoop && F.skipPoop.has(G))) { const d = Math.hypot(G.x - F.x, (G.g - F.g) / C); if (d < bd) { bd = d; best = G; } }
+  if (best) { F.fetch = best; F.fetchT = 0; F.goal = null; F.goalStage = 0; F.pause = 0; } else F.leave = true;
 }
 function santaTo3D(){
   const S2 = SANTA, R = S2.R, a = S2.f.dir > 0 ? 0 : Math.PI, fw = v3(Math.cos(a), Math.sin(a), 0), rt = v3(-Math.sin(a), Math.cos(a), 0), up = v3(0, 0, 1);
@@ -878,7 +907,8 @@ const onSanta = (x, y) => { const b = SANTA.on && SANTA.box; return !!b && x > b
 function popSanta(){
   if (!SANTA.on || SANTA.popped[SANTA.k]) return false;
   SANTA.popped[SANTA.k] = true;
-  const b = SANTA.box; POPS.push({ x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2, r: Math.max(b.x1 - b.x0, b.y1 - b.y0) * .45, t: 0 });
+  const b = SANTA.box;
+  if (SANTA.walker) { const i = Fs.indexOf(SANTA.walker); if (i >= 0) Fs.splice(i, 1); SANTA.walker = null; } POPS.push({ x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2, r: Math.max(b.x1 - b.x0, b.y1 - b.y0) * .45, t: 0 });
   /* und alle Geschenke gleich mit, kurz nacheinander */
   GIFTS.forEach((G, i) => POPS.push({ x: G.x, y: G.y - FH * .12, r: FH * .22, t: -.12 - i * .07, gift: G }));
   return true;
@@ -912,7 +942,7 @@ function assignPoops(){
   for (const p of POOPS) {
     if (p.who && (!Fs.includes(p.who) || (p.who.fetch !== p && !(p.who.pickUp && p.who.pickUp.p === p)))) p.who = null;
     if (p.who || clock - p.born < 2.5) continue;
-    const ok = F => F.surf < 0 && !F.act && !F.lean && !F.sit && !F.drag && !F.leave && !(F.enter > 0) && !F.fetch && !F.pickUp && !F.pet && !F.trick && !F.flyHide && F.i !== sel && !F.skipPoop?.has(p);
+    const ok = F => !F.santa && F.surf < 0 && !F.act && !F.lean && !F.sit && !F.drag && !F.leave && !(F.enter > 0) && !F.fetch && !F.pickUp && !F.pet && !F.trick && !F.flyHide && F.i !== sel && !F.skipPoop?.has(p);
     const F = Fs.filter(ok).sort((a, b) => Math.hypot(a.x - p.x, a.g - p.g) - Math.hypot(b.x - p.x, b.g - p.g))[0];
     if (F) { p.who = F; F.fetch = p; F.fetchT = 0; F.goal = null; F.goalStage = 0; }
   }
@@ -1065,7 +1095,7 @@ function pickPose(F, dt){
   const P = walkPose(F, { stride: st });
   P.pelvis.z -= .2 * b; P.lean = .6 * b;
   P.handR = { r: lerp(-.17, -.06, b), f: lerp(0, .26, b), z: lerp(.3, .05, b) };
-  if (K.t > .95 && !K.done) { K.done = true; POOPS = POOPS.filter(p => p !== K.p); }
+  if (K.t > .95 && !K.done) { K.done = true; if (K.p.gift) K.p.gone = true; else POOPS = POOPS.filter(p => p !== K.p); }
   if (K.t >= 1.8) { F.pickUp = null; F.pause = .3; F.vs = 0; }
   return P;
 }
@@ -1126,7 +1156,7 @@ function swingJ(J, sw){
 }
 function syncFigs(){
   const want = new Set(wantedFigs());
-  for (const F of Fs) if (!want.has(F.i) && !F.leave) { F.leave = true; F.goal = null; F.lean = null; F.goalStage = 0; F.pause = 0; if (F.act) F.act.dur = Math.min(F.act.dur, 1); }
+  for (const F of Fs) if (!F.santa && !want.has(F.i) && !F.leave) { F.leave = true; F.goal = null; F.lean = null; F.goalStage = 0; F.pause = 0; if (F.act) F.act.dur = Math.min(F.act.dur, 1); }
   for (const i of want) if (!fig(i)) {
     const F = makeFig(i), side = Math.random() < .5;
     let g = top() + Math.random() * (bottom() - top());
@@ -1183,7 +1213,7 @@ function step(F, dt){
       if (F.spot && !F.topGoal && !held && !F.leave && !F.trick && !F.sitDone && F.topT > .8) { F.sitDone = true; if (Math.random() < .55) F.sit = { t: 0, dur: 4 + Math.random() * 5, sp: F.spot, a0: F.a, x0: F.x, g0: F.g }; }
       if (F.topT > (F.topWait || 3) && F.spot && !F.topGoal && !F.sit && !held) { actFromPlan(F, F.spot, true); F.topT = 0; F.spot = null; }
     }
-    if (!onTop && !F.goal && !F.fetch && !F.trick && !held && !F.leave && !(F.enter > 0) && letters.spots.length && Math.random() < dt * .1) {
+    if (!onTop && !F.goal && !F.fetch && !F.trick && !F.santa && !held && !F.leave && !(F.enter > 0) && letters.spots.length && Math.random() < dt * .1) {
       /* nur Stellen mit freiem Weg, freiem Einstieg und einem Buchstaben, auf dem niemand ist */
       const sight = sp => { const dx = sp.S2.x - F.x, dg = sp.S2.g - F.g, n = Math.ceil(Math.hypot(dx, dg / C) / (FH * .15)); for (let k = 1; k <= n; k++) if (!clearAt(-1, F.x + dx * k / n, F.g + dg * k / n)) return false; return true; };
       const busy = sp => Fs.some(o => o !== F && (o.goal === sp || o.spot === sp || o.surf === sp.id || (o.spot && o.spot.id === sp.id) || (o.goal && o.goal.id === sp.id) || (o.act && (o.act.to === sp.id || o.act.from === sp.id)) || Math.hypot(o.x - sp.S.x, (o.g - sp.S.g) / C) < FH * .6 || Math.hypot(o.x - sp.S2.x, (o.g - sp.S2.g) / C) < FH * .5));
@@ -1249,7 +1279,7 @@ function step(F, dt){
       const run = F.trick && F.trick.kind === 'pet' && !F.trick.wait && !F.trick.petting && DOG ? petSpot(F) : null;
       /* so schnell wie nötig, damit das Streicheln überall im selben Moment beginnt */
       if (run) { const d = Math.hypot(run.x - F.x, (run.g - F.g) / C) / FH; want = d < .08 ? 0 : Math.min(cl(d / Math.max(.3, PET_RUN - F.trick.t) * 1.15, .35, 9), d / Math.max(dt, 1 / 60) * .6); }
-      const desired = run ? Math.atan2((run.g - F.g) / C, run.x - F.x) : F.fetch && !F.leave ? Math.atan2((F.fetch.g - F.g) / C, F.fetch.x - F.x) : F.leave ? (F.x < W / 2 ? Math.PI : 0) : F.enter > 0 ? (F.x < W / 2 ? 0 : Math.PI) : F.escT > 0 ? F.escA : F.goal ? Math.atan2((F.goal.S2.g - F.g) / C, F.goal.S2.x - F.x) : F.a + cl(turn, -4, 4) * dt;
+      const desired = run ? Math.atan2((run.g - F.g) / C, run.x - F.x) : F.fetch && F.escT > 0 ? F.escA : F.fetch && !F.leave ? Math.atan2((F.fetch.g - F.g) / C, F.fetch.x - F.x) : F.leave ? (F.x < W / 2 ? Math.PI : 0) : F.enter > 0 ? (F.x < W / 2 ? 0 : Math.PI) : F.escT > 0 ? F.escA : F.goal ? Math.atan2((F.goal.S2.g - F.g) / C, F.goal.S2.x - F.x) : F.a + cl(turn, -4, 4) * dt;
       if (F.goal && F.escT <= 0) want *= cl(Math.hypot(F.goal.S2.x - F.x, (F.goal.S2.g - F.g) / C) / (FH * .7), .3, 1);
       let pick = null, da0 = 0;
       for (const da of [0, .35, -.35, .7, -.7, 1.1, -1.1, 1.6, -1.6, 2.2, -2.2, Math.PI]) {
@@ -1267,7 +1297,7 @@ function step(F, dt){
       /* steht die Figur knapp an einer Wand (nach dem Klettern), darf sie sich wegbewegen */
       if (clear(nx, ng) || (idAt(nx, ng) === F.surf && (free(F.a) || (F.escT > 0 && clearAt(F.surf, nx, ng, .1))))) { F.x = nx; F.g = ng; }
       else F.sp *= .5;
-      if (!F.goal && !F.fetch && !F.trick && !F.leave && !(F.enter > 0) && Math.random() < dt * .05) F.pause = 1 + Math.random() * 2.5;
+      if (!F.goal && !F.fetch && !F.trick && !F.santa && !F.leave && !(F.enter > 0) && Math.random() < dt * .05) F.pause = 1 + Math.random() * 2.5;
     }
     if (DOG && F.surf < 0 && !F.goalStage) { const dx = F.x - DOG.x, dg = (F.g - DOG.g) / C, d = Math.hypot(dx, dg), m = FH * .34;
       if (d < m && d > .01) { const push = Math.min(m - d, FH * 1.5 * dt), px = F.x + dx / d * push, pg = F.g + dg / d * push * C; if (clear(px, pg)) { F.x = px; F.g = pg; } } }
@@ -1280,7 +1310,14 @@ function step(F, dt){
     /* beim Hund angekommen: streicheln */
     /* beim Haufen angekommen: bücken und aufheben */
     if (F.fetch) { F.fetchT += dt; const p = F.fetch, d = Math.hypot(p.x - F.x, (p.g - F.g) / C);
-      if (!POOPS.includes(p)) F.fetch = null;
+      /* kommt die Figur nicht näher, ein Stück in die offenste Richtung Richtung Ziel ausweichen */
+      if (F.fetchFor !== p) { F.fetchFor = p; F.fetchBest = 1e9; F.fetchNP = 0; }
+      if (d < (F.fetchBest ?? 1e9) - FH * .05) { F.fetchBest = d; F.fetchNP = 0; } else if ((F.fetchNP = (F.fetchNP || 0) + dt) > 1.4 && !(F.escT > 0)) {
+        const ta = Math.atan2((p.g - F.g) / C, p.x - F.x); let best = F.a, bs = -1e9;
+        for (let k2 = 0; k2 < 16; k2++) { const a2 = k2 * Math.PI / 8; let n = 0; for (const L of [.25, .5, .75, 1, 1.25, 1.5]) { if (clearAt(F.surf, F.x + Math.cos(a2) * L * FH, F.g + Math.sin(a2) * L * FH * C)) n++; else break; }
+          const sc = n + Math.cos(a2 - ta) * 2.2 + (Math.abs(Math.atan2(Math.sin(a2 - F.a), Math.cos(a2 - F.a))) > 2.6 ? -1 : 0); if (n >= 2 && sc > bs) { bs = sc; best = a2; } }
+        F.escA = best; F.escT = .9 + Math.random() * .6; F.fetchNP = 0; F.fetchBest = 1e9; }
+      if (p.gift ? !GIFTS.includes(p) || p.popped : !POOPS.includes(p)) F.fetch = null;
       else if (d < FH * .26) { F.fetch = null; F.pickUp = { t: 0, p, a: Math.atan2((p.g - F.g) / C, p.x - F.x) }; F.sp = 0; }
       else if (F.fetchT > 14) { (F.skipPoop = F.skipPoop || new Set()).add(p); F.fetch = null; p.who = null; } }
     /* Beine nur bewegen, wenn die Figur wirklich vorankommt */
@@ -1528,7 +1565,7 @@ function onInfo(x, y){
 }
 /* Ziehen und Antippen */
 let drag = null;
-const pick = (x, y) => [...Fs].sort((a, b) => b.g - a.g).find(F => F.box && x >= F.box.x0 - 12 && x <= F.box.x1 + 12 && y >= F.box.y0 - 12 && y <= F.box.y1 + 12);
+const pick = (x, y) => [...Fs].sort((a, b) => b.g - a.g).find(F => F.box && !F.santa && x >= F.box.x0 - 12 && x <= F.box.x1 + 12 && y >= F.box.y0 - 12 && y <= F.box.y1 + 12);
 cv.addEventListener('pointerdown', e => {
   if (view !== 'pick' && view !== 'lobby') return;
   if (onSanta(e.clientX, e.clientY)) { if (popSanta()) rtSend({ t: 'santa', k: SANTA.k }); return; }
