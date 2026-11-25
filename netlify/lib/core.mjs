@@ -94,29 +94,29 @@ export function makeHandler({ getStore, env = () => undefined, now = () => Date.
         const names = {}; for (const k in c) names[k] = c[k].name;
         return json({ open: t < DEADLINE, deadline: DEADLINE, now: t, max: MAX, claims: names, drawn: !!ch });
       }
-      if (req.method !== 'POST') return fail('Nicht gefunden.', 404);
+      if (req.method !== 'POST') return fail('Not found.', 404);
       const body = await readBody(req);
-      if (!body) return fail('Ungültige Anfrage.', 400);
+      if (!body) return fail('Invalid request.', 400);
 
       if (route === 'join') {
-        if (t >= DEADLINE) return fail('Die Anmeldung ist geschlossen.', 403);
+        if (t >= DEADLINE) return fail('Registration is closed.', 403);
         const fig = figOf(body.fig), name = cleanName(body.name);
-        if (fig === null) return fail('Diese Figur gibt es nicht.', 400);
-        if (!name) return fail('Bitte nur Buchstaben, Zahlen und Leerzeichen, höchstens 24 Zeichen.', 400);
+        if (fig === null) return fail('This figure does not exist.', 400);
+        if (!name) return fail('Please use letters, numbers and spaces only, 24 characters at most.', 400);
         const c = await claims(store);
-        if (Object.keys(c).length >= MAX) return fail('Alle Plätze sind vergeben.', 409);
+        if (Object.keys(c).length >= MAX) return fail('All spots are taken.', 409);
         const nk = nameKey(name);
         const n1 = await store.setJSON(nk, { fig, at: t }, { onlyIfNew: true });
-        if (!n1.modified) return fail(`${name} ist schon auf dem Platz. Nimm zum Beispiel noch den ersten Buchstaben vom Nachnamen dazu.`, 409);
+        if (!n1.modified) return fail(`${name} is already here. Try adding the first letter of your last name.`, 409);
         const token = randomBytes(32).toString('base64url'), pin = String(randomInt(10000)).padStart(4, '0'), salt = randomBytes(16).toString('hex');
         const f1 = await store.setJSON('fig/' + fig, { name, tokens: [sha(token)], pinHash: pinHash(pin, salt), salt, at: t }, { onlyIfNew: true });
-        if (!f1.modified) { await store.delete(nk); return fail('Diese Figur hat gerade jemand anderes genommen. Wähle eine andere.', 409); }
+        if (!f1.modified) { await store.delete(nk); return fail('Someone just took this figure. Please pick another one.', 409); }
         return json({ fig, name, token, pin });
       }
 
       if (route === 'me') {
         const a = await auth(store, body);
-        if (!a) return fail('Unbekannt.', 401);
+        if (!a) return fail('Unknown.', 401);
         const out = { fig: a.fig, name: a.rec.name, open: t < DEADLINE };
         if (t >= DEADLINE) { const ch = await chain(store, t); const to = ch ? ch.map[a.fig] : undefined;
           if (to !== undefined) { const r = await store.get('fig/' + to, { type: 'json' }); out.target = to; out.targetName = r ? r.name : ''; } }
@@ -125,42 +125,42 @@ export function makeHandler({ getStore, env = () => undefined, now = () => Date.
 
       if (route === 'recover') {
         const fig = figOf(body.fig), pin = typeof body.pin === 'string' && /^\d{4}$/.test(body.pin) ? body.pin : null;
-        if (fig === null || !pin) return fail('Bitte gib deinen 4-stelligen Code ein.', 400);
+        if (fig === null || !pin) return fail('Please enter your 4-digit code.', 400);
         const fp = 'fail/' + fig + '/';
-        if (await recentFails(store, fp, t) >= PIN_TRIES) return fail('Zu viele Versuche. Versuch es in einer Stunde nochmals.', 429);
+        if (await recentFails(store, fp, t) >= PIN_TRIES) return fail('Too many attempts. Please try again in an hour.', 429);
         const e = await store.getWithMetadata('fig/' + fig, { type: 'json' });
-        if (!e || !e.data || !same(e.data.pinHash, pinHash(pin, e.data.salt))) { await noteFail(store, fp, t); return fail('Der Code stimmt nicht.', 401); }
+        if (!e || !e.data || !same(e.data.pinHash, pinHash(pin, e.data.salt))) { await noteFail(store, fp, t); return fail('That code is not right.', 401); }
         const token = randomBytes(32).toString('base64url');
         /* neues Gerät dazu; die letzten vier Geräte bleiben angemeldet */
         const tokens = [...(e.data.tokens || [e.data.tokenHash]).filter(Boolean), sha(token)].slice(-4);
         const w = await store.setJSON('fig/' + fig, { ...e.data, tokens, tokenHash: undefined }, { onlyIfMatch: e.etag });
-        if (!w.modified) return fail('Bitte versuch es gleich nochmals.', 409);
+        if (!w.modified) return fail('Please try again in a moment.', 409);
         return json({ fig, name: e.data.name, token });
       }
 
       if (route.startsWith('admin/')) {
         const keyHash = env('ADMIN_KEY') ? sha(env('ADMIN_KEY')) : ADMIN_HASH;
-        if (await recentFails(store, 'afail/', t) >= ADMIN_TRIES) return fail('Gesperrt. Versuch es später.', 429);
-        if (typeof body.key !== 'string' || body.key.length > 200 || !same(sha(body.key), keyHash)) { await noteFail(store, 'afail/', t); return fail('Falscher Schlüssel.', 401); }
+        if (await recentFails(store, 'afail/', t) >= ADMIN_TRIES) return fail('Locked. Please try again later.', 429);
+        if (typeof body.key !== 'string' || body.key.length > 200 || !same(sha(body.key), keyHash)) { await noteFail(store, 'afail/', t); return fail('Wrong key.', 401); }
         const c = await claims(store);
         if (route === 'admin/list') { const ch = await store.get('chain', { type: 'json' });
           return json({ open: t < DEADLINE, drawn: !!ch, people: Object.entries(c).map(([k, v]) => ({ fig: Number(k), name: v.name, at: v.at })).sort((a, b) => a.at - b.at) }); }
         if (route === 'admin/remove') {
-          if (await store.get('chain', { type: 'json' })) return fail('Schon ausgelost, entfernen geht nicht mehr.', 409);
-          const fig = figOf(body.fig); if (fig === null || !c[fig]) return fail('Nicht gefunden.', 404);
+          if (await store.get('chain', { type: 'json' })) return fail('Already drawn, removing is no longer possible.', 409);
+          const fig = figOf(body.fig); if (fig === null || !c[fig]) return fail('Not found.', 404);
           await store.delete('fig/' + fig); await store.delete(nameKey(c[fig].name));
           return json({ ok: true });
         }
         if (route === 'admin/reset') {
-          if (body.confirm !== 'ALLES LOESCHEN') return fail('Bestätigung fehlt.', 400);
+          if (body.confirm !== 'DELETE ALL') return fail('Confirmation missing.', 400);
           const { blobs } = await store.list(); await Promise.all(blobs.map(b => store.delete(b.key)));
           return json({ ok: true });
         }
       }
-      return fail('Nicht gefunden.', 404);
+      return fail('Not found.', 404);
     } catch (err) {
       console.error(err);
-      return fail('Da ist etwas schiefgelaufen. Versuch es gleich nochmals.', 500);
+      return fail('Something went wrong. Please try again in a moment.', 500);
     }
   };
 }

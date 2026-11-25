@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -38,20 +38,27 @@ body{background:var(--w);color:var(--k);font:400 16px/1.5 "Jost","Futura","Centu
 #faq dd{margin:0;font-size:16px;line-height:1.35}
 #faq .pill{width:100%}
 @media(min-width:1024px){#faq dd{font-size:17px}#faq h2{font-size:26px}}
-#pinBox,#codeStage .note,#pinBox .note{max-width:26em}
-.note{margin:0;font-size:16px;line-height:1.4}
-#pinBox h1{margin:0 0 10px}
-#pinBox b{font-weight:500;letter-spacing:.08em}
+/* grosse Ansichten: klare Abstände statt einer Lücke für alles */
+.stage>.bigc{margin-bottom:22px}
+.note{margin:0;font-size:16px;line-height:1.45;max-width:22em;text-wrap:pretty}
+#resTxt{margin-bottom:30px}
+#codeTxt{font-size:clamp(26px,5vw,40px);line-height:1.15;max-width:none;margin-bottom:22px}
 #codeForm{display:flex;gap:12px;align-items:center;width:min(92vw,360px)}
+#pinBox{display:flex;flex-direction:column;align-items:center}
+#pinBox .label{margin:0;font-size:18px;line-height:1.2}
+#pinBox .code{margin:6px 0 18px;font-size:clamp(56px,13vw,92px);line-height:1;font-weight:500;color:var(--p);letter-spacing:.06em;font-variant-numeric:tabular-nums}
+#pinBox .note{margin-bottom:34px}
+.stage.pin .bigc{height:min(28svh,260px)}
+@media(min-width:1024px){#pinBox .label{font-size:20px}.note{font-size:17px}}
 #scene{position:fixed;inset:0;transition:opacity .8s var(--ease),transform 1s var(--ease)}
 #scene.away{opacity:0;pointer-events:none}
 #fly{position:fixed;inset:0;width:100%;height:100%;z-index:7;pointer-events:none}
 #cv,#gl{position:absolute;inset:0;width:100%;height:100%;touch-action:none;display:block}
 #cv.grab{cursor:grab}#cv.grabbing{cursor:grabbing}
 
-.stage{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:50px 20px 140px;text-align:center;opacity:0;pointer-events:none;transition:opacity .7s var(--ease)}
+.stage{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;padding:50px 20px 140px;text-align:center;opacity:0;pointer-events:none;transition:opacity .7s var(--ease)}
 .stage.on{opacity:1;pointer-events:auto}
-.bigc{width:min(92vw,560px);height:min(46svh,420px);display:block}
+.bigc{width:min(92vw,560px);height:min(46svh,420px);display:block;transition:height .6s var(--ease)}
 .bigc.wait{visibility:hidden}
 h1{font-weight:400;font-size:clamp(30px,7vw,58px);line-height:1.05;margin:0;text-wrap:balance}
 h1 b{font-weight:500;color:var(--p)}
@@ -61,6 +68,7 @@ input::placeholder{color:#aaa}
 :focus-visible{outline:2px solid var(--p);outline-offset:4px}
 input:focus-visible{outline:none;border-bottom-color:var(--p)}
 button.pill{font:inherit;font-weight:500;font-size:16px;min-height:48px;padding:10px 24px;border-radius:999px;border:1.5px solid var(--k);background:var(--k);color:var(--w);cursor:pointer;white-space:nowrap}
+button.pill:focus-visible,#scroll:focus-visible{outline:2px solid var(--k);outline-offset:3px}
 button.pill.ghost{background:transparent;color:var(--k)}
 button.pill.pink{background:var(--p);border-color:var(--p);color:var(--k)}
 
@@ -80,18 +88,19 @@ button.pill.pink{background:var(--p);border-color:var(--p);color:var(--k)}
 <body>
 
 <p id="cd" role="timer" aria-live="off" hidden></p>
-<div id="scene"><canvas id="gl" aria-hidden="true"></canvas><canvas id="cv" aria-label="Platz mit Avataren"></canvas></div>
+<div id="scene"><canvas id="gl" aria-hidden="true"></canvas><canvas id="cv" aria-label="Square with avatars"></canvas></div>
 
 <section class="stage" id="nameStage" aria-live="polite">
   <canvas class="bigc" id="nameC"></canvas>
   <form id="nameForm">
-    <input id="nameIn" placeholder="Dein Name" autocomplete="given-name" maxlength="24" aria-label="Dein Name">
-    <button class="pill" type="submit">Fertig</button>
+    <input id="nameIn" placeholder="Your name" autocomplete="given-name" maxlength="24" aria-label="Your name">
+    <button class="pill" type="submit">Done</button>
   </form>
   <div id="pinBox" hidden>
-    <h1>Dein Code: <b id="pinTxt"></b></h1>
-    <p class="note">Mit diesem Code findest du dich auf einem anderen Gerät wieder. Mach am besten einen Screenshot.</p>
-    <button class="pill" type="button" id="pinOk">Verstanden</button>
+    <p class="label">Your code</p>
+    <p class="code" id="pinTxt"></p>
+    <p class="note">With this code you can find yourself again on another device. Best take a screenshot.</p>
+    <button class="pill" type="button" id="pinOk">Got it</button>
   </div>
 </section>
 
@@ -99,34 +108,34 @@ button.pill.pink{background:var(--p);border-color:var(--p);color:var(--k)}
   <canvas class="bigc" id="codeC"></canvas>
   <p class="note" id="codeTxt"></p>
   <form id="codeForm">
-    <input id="codeIn" placeholder="Code" inputmode="numeric" autocomplete="one-time-code" maxlength="4" pattern="[0-9]{4}" aria-label="Dein 4-stelliger Code">
-    <button class="pill" type="submit">Weiter</button>
+    <input id="codeIn" placeholder="Code" inputmode="numeric" autocomplete="one-time-code" maxlength="4" pattern="[0-9]{4}" aria-label="Your 4-digit code">
+    <button class="pill" type="submit">Continue</button>
   </form>
 </section>
 
 <section class="stage" id="resStage" aria-live="polite">
   <canvas class="bigc" id="resC"></canvas>
   <h1 id="resTxt"></h1>
-  <button class="pill ghost" type="button" id="resBack">Zurück zum Platz</button>
+  <button class="pill ghost" type="button" id="resBack">Back to the square</button>
 </section>
 
 <canvas id="fly" aria-hidden="true"></canvas>
-<button id="info" type="button" aria-label="Infos zum Wichteln" aria-haspopup="dialog"></button>
+<button id="info" type="button" aria-label="About Wichteln 2026" aria-haspopup="dialog"></button>
 <dialog id="faq" aria-labelledby="faqT">
   <h2 id="faqT">Wichteln 2026</h2>
   <dl>
-    <div><dt>Datum</dt><dd>Samstag, 26. Dezember 2026</dd></div>
-    <div><dt>Zeit</dt><dd>Ab 20:00 Uhr</dd></div>
-    <div><dt>Ort</dt><dd>In Zürich. Der genaue Ort folgt.</dd></div>
-    <div><dt>Anmeldung</dt><dd>Bis 1. Dezember, 12:00 Uhr</dd></div>
-    <div><dt>Auslosen</dt><dd>Nach dem Anmeldeschluss tippst du auf Auslosen und siehst, wen du beschenkst. Behalte es für dich.</dd></div>
-    <div id="myCodeRow" hidden><dt>Dein Code</dt><dd id="myCode"></dd></div>
+    <div><dt>Date</dt><dd>Saturday, 26 December 2026</dd></div>
+    <div><dt>Time</dt><dd>From 20:00</dd></div>
+    <div><dt>Place</dt><dd>Zurich. Exact location to follow.</dd></div>
+    <div><dt>Sign up</dt><dd>Until 1 December, 12:00</dd></div>
+    <div><dt>Draw</dt><dd>Once registration closes, tap Draw to see who your gift goes to. Keep it to yourself.</dd></div>
+    <div id="myCodeRow" hidden><dt>Your code</dt><dd id="myCode"></dd></div>
   </dl>
-  <button class="pill" type="button" id="faqClose">Schliessen</button>
+  <button class="pill" type="button" id="faqClose">Close</button>
 </dialog>
 <div id="foot">
-  <button class="pill pink" type="button" id="drawBtn" hidden>Auslosen</button>
-  <button id="scroll" type="button" aria-label="Weiter"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1v13M2.5 8.5 8 14l5.5-5.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
+  <button class="pill pink" type="button" id="drawBtn" hidden>Draw</button>
+  <button id="scroll" type="button" aria-label="Next"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1v13M2.5 8.5 8 14l5.5-5.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
   <p id="say" role="status"></p>
 </div>
 

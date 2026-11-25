@@ -17,10 +17,10 @@ const saveId = () => { try { ID ? localStorage.setItem(IDK, JSON.stringify(ID)) 
 async function api(path, body){
   const r = await fetch('api/' + path, body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store' } : { cache: 'no-store' });
   let d = null; try { d = await r.json(); } catch (e) {}
-  if (!r.ok) { const err = new Error((d && d.error) || 'Keine Verbindung. Versuch es gleich nochmals.'); err.status = r.status; throw err; }
+  if (!r.ok) { const err = new Error((d && d.error) || 'No connection. Please try again in a moment.'); err.status = r.status; throw err; }
   return d;
 }
-const NET = 'Keine Verbindung. Versuch es gleich nochmals.';
+const NET = 'No connection. Please try again in a moment.';
 async function refresh(){
   const d = await api('state');
   SKEW = d.now - Date.now(); DEADLINE = d.deadline;
@@ -1095,7 +1095,7 @@ function bigJ(o, j, fh){
 function drawBig(canvas, list){
   const r = canvas.getBoundingClientRect(); if (!r.width) return;
   const d = Math.min(2, Math.round(devicePixelRatio || 1)) || 1;
-  if (canvas.width !== Math.round(r.width * d)) { canvas.width = Math.round(r.width * d); canvas.height = Math.round(r.height * d); }
+  if (canvas.width !== Math.round(r.width * d) || canvas.height !== Math.round(r.height * d)) { canvas.width = Math.round(r.width * d); canvas.height = Math.round(r.height * d); }
   const c = canvas.getContext('2d'); c.setTransform(d, 0, 0, d, 0, 0); c.clearRect(0, 0, r.width, r.height);
   const fh = bigFH(r, list.length), keepFH = FH;
   list.forEach((o, j) => { const J = bigJ(o, j, fh), box = o.F.box; FH = fh; drawFig(c, o.F, J, { x: r.width * (j + .5) / list.length, gy: r.height * .94, z: 0 }); FH = keepFH; o.F.box = box; });
@@ -1140,12 +1140,12 @@ function left(){
   const ms = DEADLINE - Date.now(); if (ms <= 0) return '';
   const t = Math.floor(ms / 1000), d = Math.floor(t / 86400), p = n => String(n).padStart(2, '0');
   const hms = `${p(Math.floor(t % 86400 / 3600))}:${p(Math.floor(t % 3600 / 60))}:${p(t % 60)}`;
-  return d ? `${d} ${d === 1 ? 'Tag' : 'Tagen'} ${hms}` : hms;
+  return d ? `${d} ${d === 1 ? 'day' : 'days'} ${hms}` : hms;
 }
 /* Countdown oben in der Blase, bis auf die Sekunde */
 function tickCd(){
   const el = $('cd'), l = left(), show = isOpen() && !!l && (view === 'pick' || view === 'lobby');
-  el.hidden = !show; if (show && el.dataset.t !== l) { el.dataset.t = l; el.innerHTML = `Anmeldeschluss in <b>${l}</b>`; }
+  el.hidden = !show; if (show && el.dataset.t !== l) { el.dataset.t = l; el.innerHTML = `Registration closes in <b>${l}</b>`; }
 }
 setInterval(tickCd, 250);
 let wasOpen = true, busy = false;
@@ -1166,16 +1166,16 @@ function setView(v, quiet){
   $('scroll').hidden = v !== 'pick' || !open;
   $('info').hidden = v !== 'pick' && v !== 'lobby';
   $('drawBtn').hidden = v !== 'lobby' || open;
-  if (v === 'pick') say(!open ? 'Die Anmeldung ist geschlossen. Schon dabei? Tippe auf deine Figur.' : sel == null ? 'Wähle deinen Avatar. Tippe auf eine schwarze Figur.' + cd : 'Gute Wahl. Scrolle weiter.');
-  if (v === 'name') { $('nameForm').hidden = false; $('pinBox').hidden = true; say('Trag deinen Namen ein.'); setTimeout(() => $('nameIn').focus(), RM ? 0 : 700); }
-  if (v === 'code') { say('Gib deinen Code ein.'); setTimeout(() => $('codeIn').focus(), RM ? 0 : 700); }
+  if (v === 'pick') say(!open ? 'Registration is closed. Already in? Tap your figure.' : sel == null ? 'Choose your avatar. Tap a black figure.' + cd : 'Nice pick. Scroll on.');
+  if (v === 'name') { $('nameForm').hidden = false; $('pinBox').hidden = true; $('nameStage').classList.remove('pin'); say('Enter your name.'); setTimeout(() => $('nameIn').focus(), RM ? 0 : 700); }
+  if (v === 'code') { say('Enter your code.'); setTimeout(() => $('codeIn').focus(), RM ? 0 : 700); }
   if (v === 'lobby') {
     const mine = S.draws[S.me];
-    $('drawBtn').textContent = mine != null ? 'Mein Los ansehen' : 'Auslosen';
-    if (open) say('Du bist dabei. Ausgelost wird am 1. Dezember um 12 Uhr.');
-    else say(mine != null ? 'Du hast dein Los schon gezogen.' : 'Die Anmeldung ist zu. Alle mit Geschenk sind im Topf. Tippe auf Auslosen.');
+    $('drawBtn').textContent = mine != null ? 'See my draw' : 'Draw';
+    if (open) say("You're in. The draw opens on 1 December at 12:00.");
+    else say(mine != null ? "You've already drawn." : 'Registration is closed. Everyone with a gift is in the pot. Tap Draw.');
   }
-  if (v === 'result') say('Psst. Behalte es für dich.');
+  if (v === 'result') say('Psst. Keep it to yourself.');
   tickCd();
   $('scroll').classList.toggle('ready', sel != null);
 }
@@ -1183,8 +1183,8 @@ function tap(F){
   if (view !== 'pick') return;
   if (!isOpen() && S.claims[F.i] == null) return;
   if (S.claims[F.i] != null) {
-    if (S.me == null) { sel = F.i; $('codeTxt').textContent = `Das ist ${S.claims[F.i]}. Bist du das? Gib deinen Code ein.`; $('codeIn').value = ''; setView('code'); startFly('in', [{ F, wave: true }], $('codeC')); return; }
-    say(`Dieser Avatar gehört schon ${S.claims[F.i]}. Nimm eine schwarze Figur.`, true); return; }
+    if (S.me == null) { sel = F.i; $('codeTxt').textContent = `Is this you, ${S.claims[F.i]}?`; $('codeIn').value = ''; setView('code'); startFly('in', [{ F, wave: true }], $('codeC')); return; }
+    say(`This avatar belongs to ${S.claims[F.i]}. Pick a black figure.`, true); return; }
   sel = F.i; F.pause = 0; setView('pick');
 }
 
@@ -1253,7 +1253,7 @@ cv.addEventListener('pointercancel', endDrag);
 function next(){
   if ($('faq').open) return;
   if (view !== 'pick' || !isOpen()) return;
-  if (sel == null) { say('Wähle zuerst deinen Avatar. Tippe auf eine schwarze Figur.', true); return; }
+  if (sel == null) { say('Choose your avatar first. Tap a black figure.', true); return; }
   $('nameIn').value = ''; setView('name');
   startFly('in', [{ F: fig(sel), wave: true }], $('nameC'));
 }
@@ -1270,28 +1270,28 @@ $('nameForm').addEventListener('submit', e => {
   e.preventDefault();
   const n = $('nameIn').value.trim();
   if (sel == null) { setView('pick'); return; }
-  if (!n) { say('Bitte trag zuerst deinen Namen ein.', true); return; }
-  if (Object.values(S.claims).some(c => c.toLowerCase() === n.toLowerCase())) { say(n + ' ist schon auf dem Platz. Nimm zum Beispiel noch den ersten Buchstaben vom Nachnamen dazu.', true); return; }
+  if (!n) { say('Please enter your name first.', true); return; }
+  if (Object.values(S.claims).some(c => c.toLowerCase() === n.toLowerCase())) { say(n + ' is already here. Try adding the first letter of your last name.', true); return; }
   if (!isOpen()) { sel = null; setView('pick'); return; }
-  if (busy) return; busy = true; say('Einen Moment …');
+  if (busy) return; busy = true; say('One moment …');
   const f0 = sel;
   api('join', { fig: f0, name: n }).then(d => {
     ID = { fig: d.fig, token: d.token, pin: d.pin }; saveId();
     S.claims[d.fig] = d.name; S.me = d.fig; sel = d.fig; $('nameIn').blur(); syncFigs(); updateMyCode();
     /* den Code einmal gross zeigen */
-    $('nameForm').hidden = true; $('pinTxt').textContent = d.pin; $('pinBox').hidden = false;
-    say('Merk dir deinen Code.'); setTimeout(() => $('pinOk').focus(), 50);
+    $('nameForm').hidden = true; $('pinTxt').textContent = d.pin; $('pinBox').hidden = false; $('nameStage').classList.add('pin');
+    say('Save your code, then tap Got it.');
   }).catch(err => {
     say(err.message || NET, true);
-    if (err.status === 409 && /Figur/.test(err.message)) refresh().then(() => { syncFigs(); }).catch(() => {});
+    if (err.status === 409 && err.status === 409 && /figure/.test(err.message)) refresh().then(() => { syncFigs(); }).catch(() => {});
   }).finally(() => { busy = false; });
 });
 $('pinOk').addEventListener('click', () => { sel = null; setView('lobby'); startFly('out', [{ F: fig(S.me), wave: true }], $('nameC')); });
 $('codeForm').addEventListener('submit', e => {
   e.preventDefault();
   const pin = $('codeIn').value.trim();
-  if (!/^\d{4}$/.test(pin)) { say('Der Code hat 4 Ziffern.', true); return; }
-  if (busy || sel == null) return; busy = true; say('Einen Moment …');
+  if (!/^\d{4}$/.test(pin)) { say('The code has 4 digits.', true); return; }
+  if (busy || sel == null) return; busy = true; say('One moment …');
   const f0 = sel;
   api('recover', { fig: f0, pin }).then(d => {
     ID = { fig: d.fig, token: d.token, pin }; saveId(); S.me = d.fig; updateMyCode();
@@ -1301,7 +1301,7 @@ $('codeForm').addEventListener('submit', e => {
 function updateMyCode(){ const has = !!(ID && ID.pin); $('myCodeRow').hidden = !has; $('myCode').textContent = has ? ID.pin : ''; }
 function showResult(){
   const r = S.draws[S.me];
-  $('resTxt').innerHTML = `Du beschenkst <b>${esc(S.claims[r])}</b>`;
+  $('resTxt').innerHTML = `Your gift goes to <b>${esc(S.claims[r])}</b>`;
   setView('result');
   startFly('in', [{ F: fig(S.me), turn: -.35 }, { F: fig(r), wave: true, turn: .35 }], $('resC'));
 }
@@ -1309,10 +1309,10 @@ $('drawBtn').addEventListener('click', () => {
   if (S.draws[S.me] != null) { showResult(); return; }
   if (isOpen() || busy || !ID) return;
   const pool = eligible();
-  if (!pool.length) { say('Es hat sich nur eine Person angemeldet, darum gibt es nichts auszulosen.', true); return; }
+  if (!pool.length) { say('Only one person signed up, so there is nothing to draw.', true); return; }
   busy = true; $('drawBtn').disabled = true;
   api('me', ID).then(m => {
-    if (m.target == null) { busy = false; $('drawBtn').disabled = false; say('Die Auslosung ist noch nicht bereit. Versuch es gleich nochmals.', true); return; }
+    if (m.target == null) { busy = false; $('drawBtn').disabled = false; say('The draw is not ready yet. Try again in a moment.', true); return; }
     if (m.targetName) S.claims[m.target] = m.targetName;
     runDraw(pool, m.target);
   }).catch(err => { busy = false; $('drawBtn').disabled = false; say(err.message || NET, true); });
@@ -1353,7 +1353,7 @@ function loop(t){
 let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(build, 200); });
 /* Start: Schrift laden, Stand vom Server holen; danach alle paar Sekunden nachfragen, solange die Seite sichtbar ist */
 const firstLoad = () => refresh().catch(() => new Promise(r => setTimeout(r, 2500)).then(firstLoad));
-say('Einen Moment …');
+say('One moment …');
 Promise.all([document.fonts ? document.fonts.load('700 100px Jost').catch(() => {}) : null, firstLoad()]).then(() => {
   wasOpen = isOpen(); updateMyCode();
   build(); setView(S.me != null ? 'lobby' : 'pick'); requestAnimationFrame(loop);
