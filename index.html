@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wichteln</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+/* VOICE: gezeichnet, ruhig, mit Witz; reine Strichzeichnung in Schwarz auf Weiss, ein Pink
+   IDEA: ein Platz von schräg oben; die Buchstaben sind Geschenkblöcke, auf die man klettert
+   PICTURE: ein einziger Canvas; Buchstaben extrudiert mit Kontur, Figuren mit 3D Skelett
+   COLOUR and TYPE: Weiss, Schwarz, Pink #ff4fa8; Jost als Futura Ersatz
+   LAYOUT: Vollbild; unten immer eine Zeile, die sagt, was zu tun ist */
+:root{color-scheme:light;--k:#000;--w:#fff;--p:#ff4fa8;--mid:#777;--ease:cubic-bezier(.76,0,.18,1)}
+*{box-sizing:border-box;min-width:0}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{background:var(--w);color:var(--k);font:400 16px/1.5 "Jost","Futura","Century Gothic",system-ui,sans-serif;overflow:hidden;overscroll-behavior:none;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+#reset{position:fixed;top:max(6px,env(safe-area-inset-top));right:6px;z-index:9;font:inherit;font-size:20px;min-width:44px;min-height:44px;color:var(--mid);background:none;border:0;cursor:pointer}
+#scene{position:fixed;inset:0;transition:opacity .8s var(--ease),transform 1s var(--ease)}
+#scene.away{opacity:0;transform:scale(1.05);pointer-events:none}
+#cv,#gl{position:absolute;inset:0;width:100%;height:100%;touch-action:none;display:block}
+#cv.grab{cursor:grab}#cv.grabbing{cursor:grabbing}
+
+.stage{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:50px 20px 140px;text-align:center;opacity:0;pointer-events:none;transition:opacity .7s var(--ease)}
+.stage.on{opacity:1;pointer-events:auto}
+.bigc{width:min(92vw,560px);height:min(46svh,420px);display:block;transform:scale(.7) translateY(10%);transition:transform 1s var(--ease)}
+.stage.on .bigc{transform:none}
+h1{font-weight:400;font-size:clamp(30px,7vw,58px);line-height:1.05;margin:0;text-wrap:balance}
+h1 b{font-weight:500;color:var(--p)}
+form{display:flex;gap:12px;align-items:flex-end;width:min(420px,100%)}
+input{flex:1;font:inherit;font-size:22px;color:var(--k);background:transparent;border:0;border-bottom:1.5px solid var(--k);border-radius:0;padding:8px 0;min-height:48px;text-align:center;user-select:text}
+input::placeholder{color:#aaa}
+:focus-visible{outline:2px solid var(--p);outline-offset:4px}
+input:focus-visible{outline:none;border-bottom-color:var(--p)}
+button.pill{font:inherit;font-weight:500;font-size:16px;min-height:48px;padding:10px 24px;border-radius:999px;border:1.5px solid var(--k);background:var(--k);color:var(--w);cursor:pointer;white-space:nowrap}
+button.pill.ghost{background:transparent;color:var(--k)}
+button.pill.pink{background:var(--p);border-color:var(--p);color:var(--k)}
+
+#foot{position:fixed;left:0;right:0;bottom:0;padding:24px 20px max(18px,env(safe-area-inset-bottom));display:flex;flex-direction:column;align-items:center;gap:12px;z-index:8;pointer-events:none}
+#foot>*{pointer-events:auto}
+#say{margin:0;font-size:15px;min-height:1.5em;text-align:center;max-width:28em;background:rgba(255,255,255,.9);padding:0 8px;border-radius:4px}
+#say.shake{animation:shake .4s}
+@keyframes shake{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+#scroll{width:50px;height:50px;border-radius:50%;border:1.5px solid var(--k);background:var(--w);color:var(--k);display:grid;place-items:center;cursor:pointer;padding:0}
+#scroll svg{width:16px;height:16px;animation:nudge 1.6s ease-in-out infinite}
+#scroll.ready{background:var(--k);color:var(--w)}
+@keyframes nudge{0%,100%{transform:translateY(-3px)}50%{transform:translateY(4px)}}
+@media(min-width:1024px){#say{font-size:18px}button.pill{font-size:18px;min-height:54px;padding:12px 30px}input{font-size:26px}}
+@media(prefers-reduced-motion:reduce){#scroll svg{animation:none}#scene,.stage,.bigc{transition-duration:.01s}}
+</style>
+</head>
+<body>
+
+<button id="reset" type="button" aria-label="Vorschau zurücksetzen" title="Vorschau zurücksetzen">↺</button>
+<div id="scene"><canvas id="gl" aria-hidden="true"></canvas><canvas id="cv" aria-label="Platz mit Avataren"></canvas></div>
+
+<section class="stage" id="nameStage" aria-live="polite">
+  <canvas class="bigc" id="nameC"></canvas>
+  <form id="nameForm">
+    <input id="nameIn" placeholder="Dein Name" autocomplete="given-name" maxlength="24" aria-label="Dein Name">
+    <button class="pill" type="submit">Fertig</button>
+  </form>
+</section>
+
+<section class="stage" id="resStage" aria-live="polite">
+  <canvas class="bigc" id="resC"></canvas>
+  <h1 id="resTxt"></h1>
+  <button class="pill ghost" type="button" id="resBack">Zurück zum Platz</button>
+</section>
+
+<div id="foot">
+  <button class="pill pink" type="button" id="drawBtn" hidden>Auslosen</button>
+  <button id="scroll" type="button" aria-label="Weiter"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1v13M2.5 8.5 8 14l5.5-5.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
+  <p id="say" role="status"></p>
+</div>
+
+<script>
+{
+const $ = id => document.getElementById(id);
+const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const PINK = '#ff4fa8', INK = '#000', PAPER = '#fff';
+const N = 14, KEY = 'wichteln-v2';
+
+/* ---------- Zustand der Vorschau (später Netlify) ---------- */
+const fresh = () => ({ claims:{2:'Lena',5:'Marco',9:'Joana',11:'Sami'}, me:null, draws:{} });
+let S;
+try { S = JSON.parse(localStorage.getItem(KEY)) } catch(e) {}
+if (!S || !S.claims) S = fresh();
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)) } catch(e) {} };
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* Aussehen: Oberteil, Hose, Frisur, Statur */
+const LOOKS = Array.from({length:N}, (_,i) => ({
+  shirt: [1,0,1,1,0,1,0,1,1,0,1,0,1,0][i], pants: [0,1,0,0,1,0,0,0,0,1,0,1,0,1][i],
+  hair: [0,1,2,0,3,1,4,0,2,1,0,3,4,1][i], build: [1,0,.5,1,0,.6,0,.3,1,0,.8,0,.4,1][i], h: [1,.95,.97,1.03,.94,1.02,.96,1,1.04,.95,1,.97,.93,1.01][i]
+}));
+
+/* ---------- Projektion: Blick schräg von oben, orthografisch wie eine Zeichnung ---------- */
+const EL = 42 * Math.PI / 180, C = Math.sin(EL), HZ = Math.cos(EL);
+/* Weltpunkt relativ zur Figur: dx, dv (Bodentiefe), z (Höhe) -> Bildschirm */
+const sy = (G, dv, z) => G + dv * C - z * HZ;
+const depth = (dv, z) => dv * HZ + z * C;
+
+/* ---------- Mathe ---------- */
+const cl = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (k, a, b) => cl((k - a) / ((b - a) || 1));
+const ez = t => t * t * (3 - 2 * t);
+const v3 = (x, y, z) => ({x, y, z});
+const add = (a, b) => v3(a.x + b.x, a.y + b.y, a.z + b.z), sub = (a, b) => v3(a.x - b.x, a.y - b.y, a.z - b.z);
+const mul = (a, s) => v3(a.x * s, a.y * s, a.z * s), dot = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
+const len = a => Math.hypot(a.x, a.y, a.z), nrm = a => { const l = len(a) || 1; return mul(a, 1 / l); };
+/* Zwei Knochen IK: Gelenk biegt Richtung bend */
+function ik(a, c, l1, l2, bend){
+  let d = sub(c, a), dl = len(d);
+  const mx = (l1 + l2) * .999;
+  if (dl > mx) { d = mul(d, mx / dl); c = add(a, d); dl = mx; }
+  const u = mul(d, 1 / (dl || 1));
+  let f = sub(bend, mul(u, dot(bend, u)));
+  f = len(f) < 1e-4 ? v3(0, 0, 1) : nrm(f);
+  const x = (l1 * l1 - l2 * l2 + dl * dl) / (2 * (dl || 1)), h = Math.sqrt(Math.max(0, l1 * l1 - x * x));
+  return { j: add(add(a, mul(u, x)), mul(f, h)), end: c };
+}
+/* Catmull Rom über Keyframes mit Zeiten */
+function spline(keys, k, get){
+  let i = 0; while (i < keys.length - 2 && k > keys[i + 1].t) i++;
+  const k0 = keys[Math.max(0, i - 1)], k1 = keys[i], k2 = keys[i + 1], k3 = keys[Math.min(keys.length - 1, i + 2)];
+  const t = cl((k - k1.t) / (k2.t - k1.t || 1));
+  const p0 = get(k0), p1 = get(k1), p2 = get(k2), p3 = get(k3);
+  const m1 = (p2 - p0) * .5 * (k2.t - k1.t) / ((k2.t - k0.t) || 1) * 2, m2 = (p3 - p1) * .5 * (k2.t - k1.t) / ((k3.t - k1.t) || 1) * 2;
+  const t2 = t * t, t3 = t2 * t;
+  return (2 * t3 - 3 * t2 + 1) * p1 + (t3 - 2 * t2 + t) * m1 + (-2 * t3 + 3 * t2) * p2 + (t3 - t2) * m2;
+}
+
+/* ---------- Canvas ---------- */
+const GLYPHS = {"0":{"w":58.2,"h":72.6,"c":[["M",-12.8,0],["L",-12.8,0],["Q",-12.8,-4.9,-11.9,-9],["Q",-11,-13,-9.3,-15.8],["Q",-7.6,-18.7,-5.2,-20.2],["Q",-2.9,-21.8,0,-21.8],["L",0,-21.8],["Q",2.9,-21.8,5.3,-20.2],["Q",7.6,-18.7,9.3,-15.8],["Q",11,-13,11.9,-9],["Q",12.8,-4.9,12.8,0],["L",12.8,0],["Q",12.8,4.9,11.9,9],["Q",11,13,9.3,15.8],["Q",7.6,18.7,5.3,20.3],["Q",2.9,21.8,0,21.8],["L",0,21.8],["Q",-2.9,21.8,-5.2,20.3],["Q",-7.6,18.7,-9.3,15.8],["Q",-11,13,-11.9,9],["Q",-12.8,4.9,-12.8,0],["M",-29.1,0],["L",-29.1,0],["Q",-29.1,11.4,-25.5,19.5],["Q",-21.8,27.6,-15.2,32],["Q",-8.6,36.3,0,36.3],["L",0,36.3],["Q",9,36.3,15.5,32],["Q",22,27.6,25.6,19.5],["Q",29.1,11.4,29.1,0],["L",29.1,0],["Q",29.1,-11.4,25.6,-19.5],["Q",22,-27.6,15.5,-31.9],["Q",9,-36.3,0,-36.3],["L",0,-36.3],["Q",-8.6,-36.3,-15.2,-31.9],["Q",-21.8,-27.6,-25.5,-19.5],["Q",-29.1,-11.4,-29.1,0]]},"2":{"w":59.3,"h":71.4,"c":[["M",1.6,3.4],["L",-29.6,35.7],["L",29.7,35.7],["L",29.7,20.2],["L",1.7,20.2],["L",18,5.6],["Q",22.5,1.7,25.3,-3],["Q",28.1,-7.8,28.1,-13.5],["L",28.1,-13.5],["Q",28.1,-17.5,26.4,-21.4],["Q",24.7,-25.3,21.3,-28.5],["Q",18,-31.8,13,-33.7],["Q",8,-35.7,1.4,-35.7],["L",1.4,-35.7],["Q",-7.5,-35.7,-13.8,-32],["Q",-20,-28.3,-23.2,-22.1],["Q",-26.2,-15.9,-26.2,-8.4],["L",-26.2,-8.4],["L",-9.7,-8.4],["Q",-9.7,-12.2,-8.4,-15.1],["Q",-7.2,-18,-4.7,-19.6],["Q",-2.2,-21.2,0.9,-21.2],["L",0.9,-21.2],["Q",3.3,-21.2,5.2,-20.5],["Q",7,-19.7,8.2,-18.5],["Q",9.3,-17.2,10,-15.6],["Q",10.6,-14,10.6,-12.4],["L",10.6,-12.4],["Q",10.6,-9.6,9.5,-7.1],["Q",8.5,-4.7,6.4,-2.2],["Q",4.3,0.3,1.6,3.4],["L",1.6,3.4]]},"6":{"w":56.9,"h":71.3,"c":[["M",21.3,-35.6],["L",-0.1,-35.6],["L",-20.3,-9.9],["Q",-23.7,-5.7,-26.1,-0.9],["Q",-28.4,3.9,-28.4,9.5],["L",-28.4,9.5],["Q",-28.4,18.1,-24.6,23.9],["Q",-20.7,29.8,-14.3,32.7],["Q",-7.9,35.7,0,35.7],["L",0,35.7],["Q",7.9,35.7,14.3,32.7],["Q",20.8,29.8,24.6,23.9],["Q",28.5,18.1,28.5,9.5],["L",28.5,9.5],["Q",28.5,4.2,26.6,0],["Q",24.8,-4.2,21.6,-7.2],["Q",18.5,-10.1,14.6,-11.7],["Q",10.8,-13.2,6.9,-13.2],["L",6.9,-13.2],["Q",3,-13.2,0.5,-12.4],["L",0.5,-12.4],["L",21.3,-35.6],["M",-11.7,9.5],["L",-11.7,9.5],["Q",-11.7,6,-10.2,3.3],["Q",-8.7,0.6,-6,-0.9],["Q",-3.4,-2.4,0,-2.4],["L",0,-2.4],["Q",3.4,-2.4,6,-0.9],["Q",8.6,0.6,10.2,3.3],["Q",11.8,6,11.8,9.5],["L",11.8,9.5],["Q",11.8,13.1,10.2,15.7],["Q",8.6,18.4,6,19.8],["Q",3.4,21.3,0,21.3],["L",0,21.3],["Q",-3.4,21.3,-6,19.8],["Q",-8.7,18.4,-10.2,15.7],["Q",-11.7,13.1,-11.7,9.5]]},"W":{"w":105.7,"h":77.6,"c":[["M",32.7,-35.3],["L",19.2,4.6],["L",-0.1,-38.8],["L",-19.1,4.6],["L",-32.9,-35.3],["L",-52.9,-35.3],["L",-22.6,38.8],["L",-0.1,-3.4],["L",22.5,38.8],["L",52.9,-35.3],["L",32.7,-35.3]]},"I":{"w":17.2,"h":70,"c":[["M",8.6,-35],["L",-8.6,-35],["L",-8.6,35],["L",8.6,35],["L",8.6,-35]]},"C":{"w":60.3,"h":73.2,"c":[["M",-11.8,0],["L",-11.8,0],["Q",-11.8,-6.5,-8.9,-11.1],["Q",-6,-15.7,-1.2,-18.1],["Q",3.5,-20.5,9.3,-20.5],["L",9.3,-20.5],["Q",14.3,-20.5,18,-19.2],["Q",21.9,-18,24.9,-15.8],["Q",27.9,-13.7,30.2,-11.3],["L",30.2,-11.3],["L",30.2,-29.5],["Q",25.9,-32.8,20.9,-34.7],["Q",15.9,-36.6,8.3,-36.6],["L",8.3,-36.6],["Q",-0.2,-36.6,-7.3,-34],["Q",-14.3,-31.4,-19.5,-26.5],["Q",-24.6,-21.6,-27.4,-14.9],["Q",-30.2,-8.2,-30.2,0],["L",-30.2,0],["Q",-30.2,8.2,-27.4,14.9],["Q",-24.6,21.6,-19.5,26.5],["Q",-14.3,31.4,-7.3,34],["Q",-0.2,36.6,8.3,36.6],["L",8.3,36.6],["Q",15.9,36.6,20.9,34.7],["Q",25.9,32.8,30.2,29.5],["L",30.2,29.5],["L",30.2,11.3],["Q",27.9,13.7,24.9,15.8],["Q",21.9,17.9,18,19.2],["Q",14.3,20.5,9.3,20.5],["L",9.3,20.5],["Q",3.5,20.5,-1.2,18.1],["Q",-6,15.7,-8.9,11.1],["Q",-11.8,6.4,-11.8,0]]},"H":{"w":63.9,"h":70,"c":[["M",31.9,-35],["L",15.1,-35],["L",15.1,-9.5],["L",-15,-9.5],["L",-15,-35],["L",-31.9,-35],["L",-31.9,35],["L",-15,35],["L",-15,5.7],["L",15.1,5.7],["L",15.1,35],["L",31.9,35],["L",31.9,-35]]},"T":{"w":55.4,"h":70,"c":[["M",-27.7,-35],["L",-27.7,-19.9],["L",-8.5,-19.9],["L",-8.5,35],["L",8.4,35],["L",8.4,-19.9],["L",27.7,-19.9],["L",27.7,-35],["L",-27.7,-35]]},"E":{"w":46.5,"h":70,"c":[["M",23.3,-35],["L",-23.2,-35],["L",-23.2,35],["L",23.3,35],["L",23.3,21.1],["L",-7,21.1],["L",-7,5],["L",21.3,5],["L",21.3,-8.6],["L",-7,-8.6],["L",-7,-21.1],["L",23.3,-21.1],["L",23.3,-35]]},"L":{"w":45,"h":70,"c":[["M",-5.6,-35],["L",-22.5,-35],["L",-22.5,35],["L",22.5,35],["L",22.5,20.5],["L",-5.6,20.5],["L",-5.6,-35]]},"N":{"w":64.6,"h":77,"c":[["M",32.3,-35],["L",16,-35],["L",16,4.4],["L",-32.3,-38.5],["L",-32.3,35],["L",-16.1,35],["L",-16.1,-4.4],["L",32.3,38.5],["L",32.3,-35]]}};
+/* Glyphe als Pfad, Grösse 100 auf fs skaliert, y nach unten */
+function glyphPath(ch, fs){
+  const k = fs / 100, p = new Path2D();
+  for (const c of GLYPHS[ch].c) {
+    if (c[0] === 'M') p.moveTo(c[1] * k, c[2] * k); else if (c[0] === 'L') p.lineTo(c[1] * k, c[2] * k);
+    else if (c[0] === 'Q') p.quadraticCurveTo(c[1] * k, c[2] * k, c[3] * k, c[4] * k);
+    else if (c[0] === 'C') p.bezierCurveTo(c[1] * k, c[2] * k, c[3] * k, c[4] * k, c[5] * k, c[6] * k); else p.closePath();
+  }
+  return p;
+}
+function glyphShapes(ch, fs){
+  const k = fs / 100, sp = new THREE.ShapePath();
+  for (const c of GLYPHS[ch].c) {
+    if (c[0] === 'M') sp.moveTo(c[1] * k, -c[2] * k); else if (c[0] === 'L') sp.lineTo(c[1] * k, -c[2] * k);
+    else if (c[0] === 'Q') sp.quadraticCurveTo(c[1] * k, -c[2] * k, c[3] * k, -c[4] * k);
+    else if (c[0] === 'C') sp.bezierCurveTo(c[1] * k, -c[2] * k, c[3] * k, -c[4] * k, c[5] * k, -c[6] * k);
+  }
+  /* Aussenformen und Innenräume selbst bestimmen: grösste Kontur aussen, was darin liegt ist ein Loch */
+  const cs = sp.subPaths.map(p => p.getPoints(14)).filter(p => p.length > 2).map(p => ({ p, A: Math.abs(THREE.ShapeUtils.area(p)) })).sort((a, b) => b.A - a.A);
+  const inside = (pt, poly) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a.y > pt.y) !== (b.y > pt.y) && pt.x < (b.x - a.x) * (pt.y - a.y) / (b.y - a.y) + a.x) c = !c; } return c; };
+  const out = [];
+  for (const c of cs) { const host = out.find(o => inside(c.p[0], o.p)); if (host) host.s.holes.push(new THREE.Path(c.p)); else out.push({ p: c.p, s: new THREE.Shape(c.p) }); }
+  return out.map(o => o.s);
+}
+const cv = $('cv'), ctx = cv.getContext('2d');
+let W = 0, Hh = 0, DPR = 1, FH = 100, LW = 2;
+const letters = { cv: document.createElement('canvas'), ids: null, idW: 0, idH: 0, G: [] };
+const mobile = () => innerWidth < 640, desk = () => innerWidth >= 1024;
+
+/* ---------- Buchstaben: extrudierte Strichzeichnung, keine Grautöne ---------- */
+function buildLetters(){
+  const L = letters;
+  const rows = mobile() ? ['WICH', 'TELN', '2026'] : ['WICHTELN', '2026'];
+  const font = fs => `700 ${fs}px Jost, Futura, "Century Gothic", sans-serif`;
+  const heights = [1.15, .6, 1.3, .8, 1.4, .65, 1.05, .55, 1.25, .75, 1.35, .7];
+  /* Buchstaben verteilt über den Platz, leicht gedreht, mit Platz zum Durchgehen */
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const x0 = W * (mobile() ? .06 : .05), x1 = W - x0;
+  const y0 = top() + FH * 1.1, y1 = bottom() - FH * .5;
+  const rowSp = (y1 - y0) / rows.length;
+  L.G = [];
+  const maxN = Math.max(...rows.map(r => r.length));
+  const fs = Math.floor(Math.min((x1 - x0) / maxN * (mobile() ? .66 : desk() ? .84 : .72), rowSp / C * .5, FH * 3) * (L.shrink || 1));
+  rows.forEach((row, ri) => {
+    const n = row.length, slot = (x1 - x0) / n;
+    [...row].forEach((ch, ci) => {
+      const x = x0 + slot * (ci + .5) + (rnd() - .5) * slot * .22;
+      const gy = y0 + rowSp * (ri + .55) + (rnd() - .5) * rowSp * .22;
+      const H = Math.round(Math.min(FH * 1.75, fs * .95 * heights[L.G.length % heights.length]));
+      L.G.push({ ch, x, gy, rot: (rnd() - .5) * .38, H, E: H * HZ });
+    });
+  });
+  /* Trefferkarte: 0 frei, 255 gesperrt (Nischen), sonst Buchstabe */
+  const idc = document.createElement('canvas'); idc.width = W; idc.height = Hh;
+  const ix = idc.getContext('2d', { willReadFrequently: true });
+  L.fs = fs;
+  L.tooClose = false;
+  L.G.forEach((g, i) => { ix.save(); ix.translate(g.x, g.gy); ix.scale(1, C); ix.rotate(g.rot); ix.fillStyle = `rgb(${i + 1},0,0)`; ix.fill(glyphPath(g.ch, fs)); ix.restore(); });
+  const data = ix.getImageData(0, 0, W, Hh).data;
+  L.idW = W; L.idH = Hh; L.ids = new Uint8Array(W * Hh);
+  const NG = L.G.length;
+  /* Abstand zwischen den Buchstaben prüfen */
+  { const gap = Math.round(FH * .6); outer: for (let y = 0; y < Hh; y += 2) for (let x = 0; x < W; x += 2) { const v = data[(y * W + x) * 4 + 3] === 255 ? data[(y * W + x) * 4] : 0; if (!v || v > NG) continue;
+      for (const [dx, dy] of [[gap, 0], [-gap, 0], [0, Math.round(gap * C)], [0, -Math.round(gap * C)], [gap * .7, gap * .7 * C], [-gap * .7, gap * .7 * C]]) {
+        const X = Math.round(x + dx), Y = Math.round(y + dy); if (X < 0 || Y < 0 || X >= W || Y >= Hh) continue;
+        const o = data[(Y * W + X) * 4 + 3] === 255 ? data[(Y * W + X) * 4] : 0; if (o && o <= NG && o !== v) { L.tooClose = true; break outer; } } } }
+  for (let p = 0, q = 0; p < L.ids.length; p++, q += 4) { const v = data[q + 3] === 255 ? data[q] : 0; L.ids[p] = v > NG ? 0 : v; }
+  /* Innenräume (O, 0, 6) sind von aussen nicht erreichbar: sperren */
+  {
+    const seen = new Uint8Array(W * Hh), st = [];
+    for (let x = 0; x < W; x++) { st.push(x, (Hh - 1) * W + x); } for (let y = 0; y < Hh; y++) { st.push(y * W, y * W + W - 1); }
+    while (st.length) { const q = st.pop(); if (seen[q] || L.ids[q] !== 0) continue; seen[q] = 1; const x = q % W;
+      if (x > 0) st.push(q - 1); if (x < W - 1) st.push(q + 1); if (q >= W) st.push(q - W); if (q < W * (Hh - 1)) st.push(q + W); }
+    for (let q = 0; q < L.ids.length; q++) if (L.ids[q] === 0 && !seen[q]) L.ids[q] = 255;
+  }
+  /* Nischen sperren: morphologisches Schliessen je Buchstabe, nur was dazukommt */
+  const r = Math.round(FH * .3);
+  L.G.forEach((g, i) => {
+    const R0 = fs * .62 + r + 4, bx = Math.max(0, Math.floor(g.x - R0)), bw = Math.min(W, Math.ceil(g.x + R0)) - bx;
+    const by = Math.max(0, Math.floor(g.gy - R0 * C)), bh = Math.min(Hh, Math.ceil(g.gy + R0 * C)) - by;
+    if (bw <= 0 || bh <= 0) return;
+    let m = new Uint8Array(bw * bh);
+    for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) m[y * bw + x] = L.ids[(y + by) * W + x + bx] === i + 1 ? 1 : 0;
+    const ry = Math.max(1, Math.round(r * C));
+    const pass = (src, dil) => {
+      const t = new Uint8Array(bw * bh), o = new Uint8Array(bw * bh);
+      for (let y = 0; y < bh; y++) { let sum = 0; const row = y * bw;
+        for (let x = -r; x < bw + r; x++) { const a = x + r, b = x - r - 1;
+          if (a < bw && a >= 0) sum += src[row + a]; if (b >= 0 && b < bw) sum -= src[row + b];
+          if (x >= 0 && x < bw) { const n = Math.min(bw - 1, x + r) - Math.max(0, x - r) + 1; t[row + x] = dil ? (sum > 0 ? 1 : 0) : (sum === n ? 1 : 0); } } }
+      for (let x = 0; x < bw; x++) { let sum = 0;
+        for (let y = -ry; y < bh + ry; y++) { const a = y + ry, b = y - ry - 1;
+          if (a < bh && a >= 0) sum += t[a * bw + x]; if (b >= 0 && b < bh) sum -= t[b * bw + x];
+          if (y >= 0 && y < bh) { const n = Math.min(bh - 1, y + ry) - Math.max(0, y - ry) + 1; o[y * bw + x] = dil ? (sum > 0 ? 1 : 0) : (sum === n ? 1 : 0); } } }
+      return o;
+    };
+    const closed = pass(pass(m, true), false);
+    for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) { const p = (y + by) * W + x + bx; if (closed[y * bw + x] && L.ids[p] === 0) L.ids[p] = 255; }
+  });
+  /* 3D Blöcke aus den Vektorformen der Schrift */
+  for (const m of GL.letters) { GL.scene.remove(m); m.geometry.dispose(); m.children.forEach(c => c.geometry.dispose()); }
+  GL.letters = L.G.map(g => {
+    const shapes = glyphShapes(g.ch, fs);
+    const geo = new THREE.ExtrudeGeometry(shapes, { depth: g.H, bevelEnabled: false, curveSegments: 14 });
+    geo.rotateX(-Math.PI / 2);
+    const m = new THREE.Mesh(geo, GL.mat[0]);
+    /* Innenräume (0, 6) oben zudecken: nur die Öffnung als Linie, keine Innenwände */
+    const holes = []; shapes.forEach(sh => sh.holes.forEach(h => holes.push(new THREE.Shape(h.getPoints()))));
+    if (holes.length) { const cg = new THREE.ShapeGeometry(holes, 14); cg.rotateX(-Math.PI / 2); cg.translate(0, g.H + .2, 0); m.add(new THREE.Mesh(cg, GL.mat[3])); }
+    m.position.set(g.x - W / 2, 0, (g.gy - Hh / 2) / C); m.rotation.y = -g.rot;
+    GL.scene.add(m); return m;
+  });
+}
+/* ---------- WebGL: echte Tiefe, Konturen über einen Kantenfilter ---------- */
+const GL = { letters: [] };
+function initGL(){
+  const r = new THREE.WebGLRenderer({ canvas: $('gl'), antialias: false, alpha: false });
+  GL.r = r; GL.scene = new THREE.Scene();
+  /* Material schreibt Normale und Farbkennung; die Farbe entsteht erst im Filter */
+  const vs = `varying vec3 vN; void main(){ vec3 p = position; vec3 n = normal;
+    #ifdef USE_INSTANCING
+      p = (instanceMatrix * vec4(p, 1.0)).xyz; n = mat3(instanceMatrix) * n;
+    #endif
+    vN = normalize(normalMatrix * n); gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0); }`;
+  const fsx = `uniform float uId; varying vec3 vN; void main(){ gl_FragColor = vec4(normalize(vN) * .5 + .5, uId / 255.0); }`;
+  GL.mat = [0, 1, 2, 3].map(id => new THREE.ShaderMaterial({ vertexShader: vs, fragmentShader: fsx, uniforms: { uId: { value: id } }, side: THREE.DoubleSide }));
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), GL.mat[0]); ground.rotation.x = -Math.PI / 2; ground.position.y = -.01;
+  GL.scene.add(ground);
+  GL.cam = new THREE.OrthographicCamera(-1, 1, 1, -1, -6000, 6000);
+  GL.cam.position.set(0, Math.sin(EL) * 3000, Math.cos(EL) * 3000); GL.cam.lookAt(0, 0, 0);
+  /* Strichmännchen: Zylinder und Kugeln als Instanzen, je Farbe */
+  const cyl = new THREE.CylinderGeometry(1, 1, 1, 10, 1, false), sph = new THREE.SphereGeometry(1, 14, 10);
+  GL.parts = {};
+  for (const [key, id] of [['k', 1], ['p', 2]]) {
+    const c = new THREE.InstancedMesh(cyl, GL.mat[id], N * 14), sp = new THREE.InstancedMesh(sph, GL.mat[id], N * 18);
+    c.frustumCulled = sp.frustumCulled = false; GL.scene.add(c); GL.scene.add(sp);
+    GL.parts[key] = { c, sp, nc: 0, ns: 0 };
+  }
+  /* Filter: Kanten aus Normalen, Tiefe und Farbkennung */
+  GL.post = new THREE.Scene(); GL.pcam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  GL.pmat = new THREE.ShaderMaterial({
+    uniforms: { tN: { value: null }, tD: { value: null }, tI: { value: null }, uRes: { value: new THREE.Vector2() }, uR: { value: 2 }, uDT: { value: .0004 }, uPink: { value: new THREE.Color(PINK) } },
+    vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+    fragmentShader: `uniform sampler2D tN; uniform sampler2D tD; uniform sampler2D tI; uniform vec2 uRes; uniform float uR; uniform float uDT; uniform vec3 uPink; varying vec2 vUv;
+      float edgeAt(vec2 o, vec4 c0, float d0){
+        vec4 a = texture2D(tN, vUv + o), b = texture2D(tN, vUv - o);
+        float da = texture2D(tD, vUv + o).x, db = texture2D(tD, vUv - o).x;
+        vec3 n0 = c0.xyz * 2.0 - 1.0;
+        float e = 0.0;
+        e = max(e, smoothstep(.86, .7, dot(n0, a.xyz * 2.0 - 1.0)));
+        e = max(e, smoothstep(.86, .7, dot(n0, b.xyz * 2.0 - 1.0)));
+        e = max(e, step(.5, abs(a.w - c0.w) * 255.0)); e = max(e, step(.5, abs(b.w - c0.w) * 255.0));
+        e = max(e, smoothstep(uDT, uDT * 2.0, abs(da + db - 2.0 * d0)));
+        return e;
+      }
+      void main(){
+        vec2 px = 1.0 / uRes; vec4 c0 = texture2D(tN, vUv); float d0 = texture2D(tD, vUv).x;
+        float e = 0.0;
+        e = max(e, edgeAt(vec2(uR, 0.0) * px, c0, d0));
+        e = max(e, edgeAt(vec2(0.0, uR) * px, c0, d0));
+        e = max(e, edgeAt(vec2(uR, uR) * .707 * px, c0, d0));
+        e = max(e, edgeAt(vec2(uR, -uR) * .707 * px, c0, d0));
+        /* Konturen kommen aus dem Bild ohne Figuren: keine Lücken, wo eine Figur davorsteht */
+        float id = floor(texture2D(tI, vUv).w * 255.0 + .5);
+        vec3 col = mix(vec3(1.0), vec3(0.0), e);
+        if (id > .5 && id < 1.5) col = vec3(0.0);
+        if (id > 1.5 && id < 2.5) col = uPink;
+        gl_FragColor = vec4(col, 1.0);
+      }`
+  });
+  GL.post.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), GL.pmat));
+}
+function sizeGL(){
+  const d = Math.min(2, devicePixelRatio || 1);
+  GL.r.setPixelRatio(d); GL.r.setSize(W, Hh, false);
+  const w = Math.round(W * d), h = Math.round(Hh * d);
+  if (GL.rt) { GL.rt.dispose(); GL.rtI.dispose(); }
+  GL.rt = new THREE.WebGLRenderTarget(w, h, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, format: THREE.RGBAFormat });
+  GL.rtI = new THREE.WebGLRenderTarget(w, h, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, format: THREE.RGBAFormat });
+  GL.rt.depthTexture = new THREE.DepthTexture(w, h); GL.rt.depthTexture.type = THREE.UnsignedIntType;
+  Object.assign(GL.cam, { left: -W / 2, right: W / 2, top: Hh / 2, bottom: -Hh / 2 }); GL.cam.updateProjectionMatrix();
+  GL.pmat.uniforms.tN.value = GL.rt.texture; GL.pmat.uniforms.tI.value = GL.rtI.texture; GL.pmat.uniforms.tD.value = GL.rt.depthTexture;
+  GL.pmat.uniforms.uRes.value.set(w, h); GL.pmat.uniforms.uR.value = (mobile() ? 1.05 : desk() ? 1.45 : 1.25) * d;
+  GL.pmat.uniforms.uDT.value = 6 / 12000;
+}
+const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _s = new THREE.Vector3(), _y = new THREE.Vector3(0, 1, 0), _d = new THREE.Vector3();
+const toW = (F, base, p) => new THREE.Vector3(F.x - W / 2 + p.x, base.z + p.z, (F.g - Hh / 2) / C + p.y);
+function addCyl(P, a, b, r){
+  _d.subVectors(b, a); const l = _d.length(); if (l < .01) return;
+  _q.setFromUnitVectors(_y, _d.multiplyScalar(1 / l)); _v.addVectors(a, b).multiplyScalar(.5); _s.set(r, l, r);
+  _m.compose(_v, _q, _s); P.c.setMatrixAt(P.nc++, _m);
+}
+function addSph(P, a, r){ _q.identity(); _s.set(r, r, r); _m.compose(a, _q, _s); P.sp.setMatrixAt(P.ns++, _m); }
+function figTo3D(F, J, base){
+  const P = GL.parts[S.claims[F.i] != null ? 'p' : 'k'], w = p => toW(F, base, p), R = FH;
+  const r = R * .033, j = {};
+  for (const k of ['pel','chest','neck','headC','shL','shR','hipL','hipR','kneeL','kneeR','ankL','ankR','elbL','elbR','handL','handR']) j[k] = w(J[k]);
+  const toe = (ank, t) => w(add(J[ank], add(mul(J.fw, .075 * R), mul(J.up, -.02 * R + t * .03 * R))));
+  j.toeL = toe('ankL', J.toeL); j.toeR = toe('ankR', J.toeR);
+  addCyl(P, j.pel, j.neck, r * 1.15); addCyl(P, j.shL, j.shR, r * .95); addCyl(P, j.hipL, j.hipR, r * .95);
+  for (const s of ['L', 'R']) {
+    addCyl(P, j['hip' + s], j['knee' + s], r); addCyl(P, j['knee' + s], j['ank' + s], r); addCyl(P, j['ank' + s], j['toe' + s], r * .9);
+    addCyl(P, j['sh' + s], j['elb' + s], r * .92); addCyl(P, j['elb' + s], j['hand' + s], r * .92);
+    for (const q of ['hip', 'knee', 'ank', 'toe', 'sh', 'elb', 'hand']) addSph(P, j[q + s], r * (q === 'toe' ? .9 : 1));
+  }
+  addSph(P, j.pel, r * 1.15); addSph(P, j.neck, r * 1.15);
+  addSph(P, j.headC, .1 * R * J.k);
+  /* Umriss für Antippen und Beschriftung */
+  const P2 = p => [base.x + p.x, sy(base.gy, p.y, p.z + base.z)];
+  const xs = [J.headC, J.handL, J.handR, J.ankL, J.ankR, J.shL, J.shR].map(P2);
+  F.box = { x0: Math.min(...xs.map(p => p[0])) - .12 * R, x1: Math.max(...xs.map(p => p[0])) + .12 * R,
+    y0: Math.min(...xs.map(p => p[1])) - .14 * R, y1: Math.max(...xs.map(p => p[1])) + .06 * R, head: P2(add(J.headC, mul(J.up, .12 * R))) };
+}
+/* -1 Boden, -2 gesperrte Nische, sonst Buchstabe */
+const idAt = (x, gy) => { x = Math.round(x); gy = Math.round(gy); if (x < 0 || gy < 0 || x >= letters.idW || gy >= letters.idH) return -1; const v = letters.ids[gy * letters.idW + x]; return v === 255 ? -2 : v - 1; };
+const hOf = id => id < 0 ? 0 : letters.G[id].H;
+function edgeNormal(x, gy, upperId){
+  let nx = 0, nv = 0;
+  for (let a = 0; a < 24; a++) {
+    const ca = Math.cos(a / 24 * Math.PI * 2), sa = Math.sin(a / 24 * Math.PI * 2);
+    for (const r of [4, 8, 12]) if (idAt(x + ca * r, gy + sa * r * C) === upperId) { nx += ca; nv += sa; }
+  }
+  const l = Math.hypot(nx, nv) || 1; return { x: nx / l, v: nv / l };
+}
+
+/* ---------- Figur: Skelett in 3D, gezeichnet als Strichzeichnung ---------- */
+function makeFig(i){
+  const Lk = LOOKS[i];
+  return { i, look: Lk, x: 0, g: 0, a: Math.PI / 2, ph: Math.random() * 6, surf: -1, sp: 0, want: .6 + Math.random() * .16,
+    seed: Math.random() * 100, pause: 0, look_: 0, act: null, drag: null, lift: 0, wave: 0, key: 0, box: null };
+}
+/* Pose: lokale Ziele (r = rechts, f = vorne, z = oben), in Figurhöhen */
+function walkPose(F, o){
+  const s = o.stride, ph = F.ph, P = {};
+  const legT = off => { const t = ((ph + off) / (Math.PI * 2) % 1 + 1) % 1;
+    if (t < .6) { const q = t / .6; return { f: s * (.5 - q), z: 0, toe: 0 }; }
+    const q = (t - .6) / .4; return { f: s * (-.5 + ez(q)), z: .07 * Math.sin(Math.PI * q) * (s > .05 ? 1 : .3), toe: Math.sin(Math.PI * q) * .5 };
+  };
+  const L = legT(0), R = legT(Math.PI);
+  const bob = s > .02 ? .014 * Math.cos(ph * 2) : 0;
+  P.pelvis = { r: Math.sin(ph) * .012 * (s > .02), f: 0, z: .52 - .02 + bob };
+  P.yaw = Math.sin(ph) * .12 * cl(s * 3);
+  P.lean = .05 * cl(s * 3);
+  P.footL = { r: .075, f: L.f, z: L.z, toe: L.toe }; P.footR = { r: -.075, f: R.f, z: R.z, toe: R.toe };
+  const sw = .45 * cl(s * 2.5);
+  P.handL = { r: .17, f: Math.sin(ph + Math.PI) * sw * .28, z: .30 + Math.abs(Math.sin(ph)) * sw * .06 };
+  P.handR = { r: -.17, f: Math.sin(ph) * sw * .28, z: .30 + Math.abs(Math.sin(ph)) * sw * .06 };
+  return P;
+}
+function solveFig(F, P){
+  /* Achsen in der Welt: vorne, rechts, oben */
+  const a = F.a, fw = v3(Math.cos(a), Math.sin(a), 0), rt = v3(-Math.sin(a), Math.cos(a), 0), up = v3(0, 0, 1);
+  const k = F.look.h, bw = 1 + F.look.build * .18;
+  const loc = (r, f, z) => add(add(mul(rt, r * FH * bw), mul(fw, f * FH)), mul(up, z * FH * k));
+  const locN = (r, f, z) => add(add(mul(rt, r * FH), mul(fw, f * FH)), mul(up, z * FH * k));
+  const locA = (r, f, z) => add(add(mul(rt, r * FH), mul(fw, f * FH)), mul(up, z * FH));
+  const pel = P.pelvis.abs ? add(locA(P.pelvis.r, P.pelvis.f, P.pelvis.z - .5), mul(up, .48 * FH * k)) : locN(P.pelvis.r, P.pelvis.f, P.pelvis.z);
+  const lean = P.lean || 0, yaw = P.yaw || 0;
+  /* Oberkörper: Neigung nach vorne, Schulterdrehung gegen die Hüfte */
+  const spineUp = add(mul(up, Math.cos(lean)), mul(fw, Math.sin(lean)));
+  const chest = add(pel, mul(spineUp, .27 * FH * k));
+  const yawV = (amt) => add(mul(rt, Math.cos(amt)), mul(fw, Math.sin(amt)));
+  const sRt = yawV(-yaw), hRt = yawV(yaw * .6);
+  const shL = add(chest, mul(sRt, .125 * FH * bw)), shR = add(chest, mul(sRt, -.125 * FH * bw));
+  const hipL = add(pel, mul(hRt, .075 * FH * bw)), hipR = add(pel, mul(hRt, -.075 * FH * bw));
+  const neck = add(chest, mul(spineUp, .045 * FH * k));
+  const headC = add(neck, add(mul(spineUp, .085 * FH * k), mul(fw, .01 * FH)));
+  const absP = p => p.abs ? p.abs : locA(p.r, p.f, p.z);
+  const hand = h => { const free = add(chest, loc(h.r, h.f, h.z - .78)); if (!h.g) return free;
+    const grab = locA(h.g.r, h.g.f, h.g.z); return add(mul(free, 1 - h.w), mul(grab, h.w)); };
+  const handL = hand(P.handL), handR = hand(P.handR);
+  const footL = absP(P.footL), footR = absP(P.footR);
+  const L1 = .25 * FH * k, L2 = .25 * FH * k, A1 = .165 * FH * k, A2 = .16 * FH * k;
+  const ankL = add(footL, mul(up, .03 * FH)), ankR = add(footR, mul(up, .03 * FH));
+  /* Knie: nach vorne, und wenn der Fuss hoch kommt nach oben; nie nach hinten umklappen */
+  /* Knie: beim Gehen nach vorne; beim Klettern zur Seite und nach oben, nie in die Wand */
+  const kd = (kb, side) => add(add(mul(fw, 1 - .85 * kb), mul(rt, side * .95 * kb)), mul(up, .85 * (1 - kb) + .25 * kb));
+  /* zeitlich glätten: das Knie bleibt auf der Seite, auf der es im letzten Bild war */
+  const coh = (d, prev) => prev ? add(mul(nrm(d), .45), mul(prev, .55)) : d;
+  const kL = ik(hipL, ankL, L1, L2, coh(kd(P.kneeBackL || 0, 1), F.kpL)), kR = ik(hipR, ankR, L1, L2, coh(kd(P.kneeBackR || 0, -1), F.kpR));
+  if (!P.noKeep) { F.kpL = nrm(sub(kL.j, hipL)); F.kpR = nrm(sub(kR.j, hipR)); }
+  const elbBend = P.armsUp ? add(mul(fw, -.3), mul(up, -.6)) : add(mul(fw, -1), mul(up, -.2));
+  const eL = ik(shL, handL, A1, A2, add(elbBend, mul(rt, .4))), eR = ik(shR, handR, A1, A2, add(elbBend, mul(rt, -.4)));
+  return { fw, rt, up, pel, chest, shL, shR, hipL, hipR, neck, headC, kneeL: kL.j, ankL: kL.end, kneeR: kR.j, ankR: kR.end,
+    elbL: eL.j, handL: eL.end, elbR: eR.j, handR: eR.end, toeL: P.footL.toe || 0, toeR: P.footR.toe || 0, k, bw };
+}
+/* Zeichnen */
+/* Strichmännchen: dicke runde Linien, Kopf als Kreis; hintere Glieder zuerst */
+function drawFig(c, F, J, base, opt = {}){
+  const col = S.claims[F.i] != null ? PINK : INK;
+  const P2 = p => [base.x + p.x, sy(base.gy, p.y, p.z + base.z)];
+  const D = p => depth(p.y, p.z);
+  const R = FH, w = (opt.w || 1) * R * .052;
+  c.strokeStyle = col; c.fillStyle = col; c.lineCap = 'round'; c.lineJoin = 'round';
+  const line = (pts, lw) => { c.beginPath(); const q = pts.map(P2); c.moveTo(q[0][0], q[0][1]); for (let j = 1; j < q.length; j++) c.lineTo(q[j][0], q[j][1]); c.lineWidth = lw; c.stroke(); };
+  const foot = (ank, toe) => { const tip = add(ank, add(mul(J.fw, .075 * R), mul(J.up, -.02 * R + toe * .03 * R))); return tip; };
+  const legL = () => line([J.hipL, J.kneeL, J.ankL, foot(J.ankL, J.toeL)], w);
+  const legR = () => line([J.hipR, J.kneeR, J.ankR, foot(J.ankR, J.toeR)], w);
+  const armL = () => line([J.shL, J.elbL, J.handL], w * .92);
+  const armR = () => line([J.shR, J.elbR, J.handR], w * .92);
+  const body = () => {
+    line([J.pel, J.chest, J.neck], w * 1.08);
+    line([J.shL, J.shR], w * .9); line([J.hipL, J.hipR], w * .9);
+    const h = P2(J.headC); c.beginPath(); c.arc(h[0], h[1], .1 * R * J.k, 0, 7); c.fill();
+  };
+  /* welche Seite ist näher bei der Kamera */
+  const lNear = D(J.hipL) + D(J.shL) > D(J.hipR) + D(J.shR);
+  const order = lNear ? [legR, armR, body, legL, armL] : [legL, armL, body, legR, armR];
+  for (const f of order) f();
+  const xs = [J.headC, J.handL, J.handR, J.ankL, J.ankR, J.shL, J.shR].map(P2);
+  F.box = { x0: Math.min(...xs.map(p => p[0])) - .12 * R, x1: Math.max(...xs.map(p => p[0])) + .12 * R,
+    y0: Math.min(...xs.map(p => p[1])) - .14 * R, y1: Math.max(...xs.map(p => p[1])) + .06 * R, head: P2(add(J.headC, mul(J.up, .12 * R))) };
+}
+
+/* ---------- Bewegung: Gehen, Klettern, Absteigen ---------- */
+/* Keyframes fürs Klettern. Füsse ohne Ziel hängen locker unter der Hüfte,
+   so bleibt jedes Ziel für die Beine erreichbar und nichts knickt falsch. */
+const dangle = (k, side) => [k.pel[0] - .03 - (side ? .02 : 0), k.pel[1] - .48 + (side ? .02 : 0)];
+const fill = keys => keys.map(k => ({ ...k, fL: k.fL || dangle(k, 0), fR: k.fR || dangle(k, 1) }));
+/* fEnd: wie weit hinter der Kante die Figur oben stehen bleibt (geprüft, dass dort Block ist) */
+/* Hüfte so hoch, dass der Arm (Schulter 0.27 über der Hüfte, Reichweite 0.3) die Kante sicher erreicht */
+const reachZ = (pf, lean, hf, H) => { const sf = pf + .27 * Math.sin(lean), dx = Math.min(.24, Math.abs(hf - sf)); return H - Math.sqrt(Math.max(.0001, .26 * .26 - dx * dx)) - .25 * Math.cos(lean); };
+const UP_KEYS = (H, fEnd) => {
+  const fk = Math.min(.07, fEnd - .02);
+  const k = (t, pf, pz, lean, hand, fL, fR) => {
+    /* Arm muss die Kante erreichen: Hüfte nah genug und hoch genug */
+    if (hand) { const sf = pf + .27 * Math.sin(lean); if (hand[0] - sf > .2) pf = hand[0] - .2 - .27 * Math.sin(lean); pz = Math.max(pz, reachZ(pf, lean, hand[0], hand[1])); }
+    return { t, pel: [pf, pz], lean, hand, fL, fR };
+  };
+  const jump = H > 1.05;
+  return fill([
+    k(0,   -.22, .5,  .03, null, [-.22, 0], [-.22, 0]),
+    k(.16, -.13, .5, 0, [.08, H], jump ? null : [-.2, 0], jump ? null : [-.21, 0]),
+    k(.3,  -.2,  Math.max(.43, H - .62), .05, [.08, H], H > 1.01 ? null : [-.19, 0], H > 1.01 ? null : [-.17, 0]),
+    k(.5, -.21, H - .32, .25, [.08, H], null, null),
+    k(.62, -.24, H - .05, .55, [.08, H], null, null),
+    k(.75, -.1,  H + .09, .6,  [.08, H], [-.13, H + .13], [-.22, H - .42]),
+    k(.84, -.04, H + .13, .6,  [.08, H], [.02, H + .01], [-.2, H - .22]),
+    k(.93, fk,   H + .3,  .3,  null, [fk + .02, H], [-.02, H + .04]),
+    k(1,   fEnd, H + .5,  .03, null, [fEnd, H], [fEnd, H]),
+  ]);
+};
+const STEP_KEYS = (H, fEnd) => fill([
+  { t: 0,   pel: [-.17, .5], lean: .03, hand: null, fL: [-.17, 0], fR: [-.17, 0] },
+  { t: .4,  pel: [-.08, .5 + H * .3], lean: .12, hand: null, fL: [.04, H + .05], fR: [-.16, 0] },
+  { t: .72, pel: [Math.min(.06, fEnd - .02), .5 + H * .95], lean: .08, hand: null, fL: [Math.min(.06, fEnd), H], fR: [-.01, H + .07] },
+  { t: 1,   pel: [fEnd, .5 + H], lean: .03, hand: null, fL: [fEnd, H], fR: [fEnd, H] },
+]);
+/* Rundum Abstand: der ganze Körper passt auf die Fläche surf */
+const clearAt = (surf, x, g, r) => {
+  if (idAt(x, g) !== surf) return false;
+  const r1 = r || (surf >= 0 ? .09 : .19), hs = hOf(surf);
+  for (let a = 0; a < 12; a++) {
+    const ca = Math.cos(a * .5236), sa = Math.sin(a * .5236);
+    if (idAt(x + ca * FH * r1, g + sa * FH * r1 * C) !== surf) return false;
+    /* keine höhere Wand in Körpernähe */
+    const q = idAt(x + ca * FH * .3, g + sa * FH * .3 * C);
+    if (q === -2 || (q !== surf && hOf(q) > hs + 2)) return false;
+  }
+  return true;
+};
+/* Grundhöhe der Figur: beim Umdrehen vor dem Absteigen noch oben auf dem Block */
+const baseZ = F => F.act ? (F.act.turn < 1 ? hOf(F.act.from) : F.act.lowZ) : F.z0;
+/* Punkt relativ zur Kante: f entlang der Normalen (in den höheren Block), r entlang der Kante, in Figurhöhen */
+const edgePt = (E, n, f, r) => ({ x: E.x + (n.x * f - n.v * r) * FH, g: E.g + (n.v * f + n.x * r) * FH * C });
+const onId = (E, n, f, r, id) => { const q = edgePt(E, n, f, r); return idAt(q.x, q.g) === id; };
+/* Kletterei planen und prüfen: Start, Griffe, Standplatz müssen stimmen, sonst nicht klettern */
+const rej = () => null;
+function planAct(F, toId, ang){
+  const fromId = F.surf;
+  if (toId === -2 || fromId === -2) return rej('r1');
+  const dh = (hOf(toId) - hOf(fromId)) / FH, up = dh > 0, Hn = Math.abs(dh);
+  if (up && Hn > 1.85) return rej('r2');
+  /* Kante: in Richtung der Annäherung bis zum ersten fremden Pixel */
+  const ca = Math.cos(ang), sa = Math.sin(ang);
+  let x = F.x, g = F.g, n0 = 0;
+  while (idAt(x, g) === fromId && n0++ < FH * .8) { x += ca * .5; g += sa * .5 * C; }
+  if (idAt(x, g) !== toId) return rej('r3');
+  const E = { x: x - ca * .25, g: g - sa * .25 * C };
+  const upper = up ? toId : fromId, lower = up ? fromId : toId;
+  const nn = edgeNormal(E.x, E.g, upper); if (!nn.x && !nn.v) return rej('r4');
+  const n = { x: nn.x, v: nn.v };
+  /* nicht zu schräg anlaufen */
+  const dir = up ? 1 : -1, cosA = (Math.cos(ang) * n.x + Math.sin(ang) * n.v) * dir;
+  if (cosA < .55) return rej('r5');
+  /* unten frei, Griffe oben, Standplatz oben */
+  for (const r of [0, .08, -.08]) for (const f of [-.2, -.28]) if (!onId(E, n, f, r, lower)) return rej('r7');
+  /* auf dem ganzen Kletterweg nur diese zwei Flächen, kein Nachbarbuchstabe im Weg */
+  for (let f = -.3; f <= .18; f += .03) for (const r of [-.25, -.17, -.08, 0, .08, .17, .25]) { const q = edgePt(E, n, f, r), id = idAt(q.x, q.g); if (f < -.02 ? id !== lower : (id !== lower && id !== upper)) return rej('r8'); }
+  let gr = null; for (const r of [.12, .08, .05]) if (onId(E, n, .1, r, upper) && onId(E, n, .1, -r, upper) && onId(E, n, .06, r, upper) && onId(E, n, .06, -r, upper)) { gr = r; break; }
+  if (gr === null) return rej('r9');
+  /* Standplatz oben: Füsse vorne, hinten und seitlich auf dem Block, keine höhere Wand daneben */
+  const standOk = f => { for (const df of [-.05, 0, .05]) for (const r of [-.08, 0, .08]) if (!onId(E, n, f + df, r, upper)) return false;
+    for (let a = 0; a < 12; a++) { const c = edgePt(E, n, f, 0), q = idAt(c.x + Math.cos(a * .5236) * FH * .3, c.g + Math.sin(a * .5236) * FH * .3 * C); if (q === -2 || (q !== upper && hOf(q) > hOf(upper) + 2)) return false; } return true; };
+  let fEnd = null; for (const f of [.15, .12, .1, .08]) if (standOk(f)) { fEnd = f; break; }
+  if (fEnd === null) return rej('r10');
+  return { E, n, up, Hn, gr, fEnd, from: fromId, to: toId, lowZ: Math.min(hOf(fromId), hOf(toId)) };
+}
+function actFromPlan(F, pl, down){
+  const from = down ? pl.to : pl.from, to = down ? pl.from : pl.to, small = pl.Hn < .36;
+  F.act = { kind: small ? 'step' : down ? 'down' : 'up', from, to, H: pl.Hn, ex: pl.E.x, eg: pl.E.g, n: pl.n, t: 0,
+    gr: pl.gr, fEnd: pl.fEnd, keys: small ? STEP_KEYS(pl.Hn, pl.fEnd) : UP_KEYS(pl.Hn, pl.fEnd), turn: 0, a0: F.a,
+    dur: small ? .9 : (down ? 2.8 : 3.2) + pl.Hn * .9, lowZ: pl.lowZ, plan: pl };
+}
+/* Kletterstellen: einmal beim Aufbau geprüft, nur diese werden benutzt */
+function buildSpots(){
+  const L = letters, out = [];
+  L.G.forEach((g, i) => {
+    const pts = [];
+    for (let y = 1; y < Hh - 1; y++) for (let x = 1; x < W - 1; x++) {
+      const q = y * W + x; if (L.ids[q] !== i + 1) continue;
+      if (L.ids[q - 1] !== i + 1 || L.ids[q + 1] !== i + 1 || L.ids[q - W] !== i + 1 || L.ids[q + W] !== i + 1) pts.push([x, y]);
+    }
+    const mine = [];
+    for (let j = 0; j < pts.length; j += 3) {
+      const [x, y] = pts[j];
+      if (mine.some(sp => Math.hypot(sp.E.x - x, (sp.E.g - y) / C) < FH * .35)) continue;
+      rej('cand');
+      const nn = edgeNormal(x, y, i); if (!nn.x && !nn.v) continue;
+      const S = { x: x - nn.x * FH * .24, g: y - nn.v * FH * .24 * C };
+      if (idAt(S.x, S.g) !== -1) { rej('sS'); continue; }
+      let ok = true; for (let a = 0; a < 12 && ok; a++) if (idAt(S.x + Math.cos(a * .5236) * FH * .14, S.g + Math.sin(a * .5236) * FH * .14 * C) !== -1) ok = false;
+      if (!ok) { rej('sRing'); continue; } if (S.x < FH * .5 || S.x > W - FH * .5 || S.g < top() || S.g > bottom()) { rej('sB'); continue; }
+      const pl = planAct({ x: S.x, g: S.g, surf: -1 }, i, Math.atan2(nn.v, nn.x));
+      const S2 = { x: x - nn.x * FH * .55, g: y - nn.v * FH * .55 * C };
+      if (pl && !clearAt(-1, S2.x, S2.g)) rej('sS2');
+      if (pl && clearAt(-1, S2.x, S2.g)) mine.push({ ...pl, S, S2, id: i });
+    }
+    out.push(...mine);
+  });
+  L.spots = out;
+}
+function startAct(F, toId, ang){
+  const pl = planAct(F, toId, ang === undefined ? F.a : ang);
+  if (!pl) return false;
+  const small = pl.Hn < .36;
+  F.act = { kind: small ? 'step' : pl.up ? 'up' : 'down', from: pl.from, to: pl.to, H: pl.Hn, ex: pl.E.x, eg: pl.E.g, n: pl.n, t: 0,
+    gr: pl.gr, fEnd: pl.fEnd, keys: small ? STEP_KEYS(pl.Hn, pl.fEnd) : UP_KEYS(pl.Hn, pl.fEnd), turn: 0, a0: F.a,
+    dur: small ? .9 : (pl.up ? 2.8 : 2.5) + pl.Hn * .9, lowZ: pl.lowZ };
+  return true;
+}
+function actPose(F, dt){
+  const A = F.act, n = A.n;
+  const down = A.kind === 'down' || (A.kind === 'step' && hOf(A.to) < hOf(A.from));
+  if (A.kind === 'step' && !down) { /* kleine Stufe hoch: Start wie beim Klettern */ }
+  const fwdStepDown = A.kind === 'step' && down, sgn = fwdStepDown ? -1 : 1;
+  /* erst zur Kante (oder beim Absteigen zum Block) drehen, mit kleinen Schritten */
+  if (A.turn < 1) {
+    const target = Math.atan2(n.v * sgn, n.x * sgn);
+    let d = target - A.a0; d = Math.atan2(Math.sin(d), Math.cos(d));
+    if (!A.p0) { A.p0 = { x: F.x, g: F.g }; A.td = Math.max(.35, Math.abs(d) * .32); }
+    A.turn = Math.min(1, A.turn + dt / A.td);
+    F.a = A.a0 + d * ez(A.turn);
+    /* gleichzeitig an die geplante Startstelle gehen */
+    const f0 = (down ? A.fEnd : -.2) * sgn, sx = A.ex + Math.cos(target) * f0 * FH, sg = A.eg + Math.sin(target) * f0 * FH * C;
+    F.x = lerp(A.p0.x, sx, ez(A.turn)); F.g = lerp(A.p0.g, sg, ez(A.turn));
+    F.ph += dt * 9;
+    if (A.turn < 1) return walkPose(F, { stride: .05 });
+  }
+  A.t = Math.min(1, A.t + dt / (RM ? .01 : A.dur));
+  const k = down ? 1 - A.t : A.t;
+  const K = A.keys, sp = get => spline(K, k, get);
+  F.a = Math.atan2(n.v * sgn, n.x * sgn);
+  const pf = sp(q => q.pel[0]) * sgn, pz = sp(q => q.pel[1]);
+  /* Ursprung auf der Kante; der Startversatz wird weich ausgeblendet */
+  if (!A.blend) { A.blend = { x: F.x - (A.ex + Math.cos(F.a) * pf * FH), g: F.g - (A.eg + Math.sin(F.a) * pf * FH * C) }; }
+  const fade = 1 - ez(cl(A.t / .2));
+  F.x = A.ex + A.blend.x * fade; F.g = A.eg + A.blend.g * fade; F.z0 = A.lowZ;
+  const P = { pelvis: { r: 0, f: pf, z: pz, abs: true }, lean: sp(q => q.lean) * (fwdStepDown ? .5 : 1), yaw: 0 };
+  P.footL = { r: .075, f: sp(q => q.fL[0]) * sgn, z: sp(q => q.fL[1]) };
+  P.footR = { r: -.075, f: sp(q => q.fR[0]) * sgn, z: sp(q => q.fR[1]) };
+  /* Hände: zuerst zur Kante greifen, dann fest an der geprüften Stelle */
+  /* Greifen: zwischen den Schlüsselbildern mit Hand weich hin, sonst fest auf der geprüften Kante */
+  const hi = K.map((q, j) => q.hand ? j : -1).filter(j => j >= 0);
+  let w = 0, hf = .05, hz = A.H;
+  if (hi.length) {
+    const a = hi[0], b = hi[hi.length - 1];
+    w = k < K[a].t ? ez(seg(k, K[Math.max(0, a - 1)].t, K[a].t)) : k > K[b].t ? 1 - ez(seg(k, K[b].t, K[Math.min(K.length - 1, b + 1)].t)) : 1;
+    const HK = K.slice(a, b + 1), kk = cl(k, K[a].t, K[b].t);
+    hf = HK.length > 1 ? spline(HK, kk, q => q.hand[0]) : K[a].hand[0]; hz = HK.length > 1 ? spline(HK, kk, q => q.hand[1]) : K[a].hand[1];
+  }
+  const sw = Math.sin(F.ph) * .03;
+  P.handL = { r: .17, f: .03 + sw, z: .3, w, g: { r: A.gr, f: hf, z: hz } };
+  P.handR = { r: -.17, f: .03 - sw, z: .3, w, g: { r: -A.gr, f: hf, z: hz } };
+  P.armsUp = w > .3;
+  /* beim Hochziehen Knie nach oben statt in die Wand */
+  if (A.kind !== 'step') {
+    /* an der Wand die ganze Zeit: Knie seitlich, erst oben wieder nach vorne */
+    const kb = Math.min(1, k / .02) * (1 - seg(k, .88, .98));
+    P.kneeBackL = kb; P.kneeBackR = kb;
+  }
+  return P;
+}
+
+/* ---------- Szene ---------- */
+let Fs = [], view = 'pick', sel = null, last = 0, clock = 0;
+const taken = () => new Set(Object.values(S.draws));
+const eligible = () => Object.keys(S.claims).map(Number).filter(i => i !== S.me && !taken().has(i));
+const top = () => Hh * .05 + FH * .9, bottom = () => Hh - (mobile() ? 125 : desk() ? 120 : 105);
+function inBounds(F){
+  const m = FH * .45;
+  return F.x > m && F.x < W - m && F.g > top() && F.g < bottom();
+}
+function build(){
+  W = innerWidth; Hh = innerHeight; DPR = Math.min(3, Math.round(devicePixelRatio || 1)) || 1;
+  cv.width = W * DPR; cv.height = Hh * DPR;
+  FH = Math.round(Math.max(40, Math.min(W * .105, Hh * .075, 72)));
+  LW = mobile() ? 1.7 : 2.1;
+  if (!GL.r) initGL();
+  sizeGL();
+  letters.shrink = 1;
+  buildLetters();
+  for (let n = 0; n < 6 && letters.tooClose; n++) { letters.shrink *= .9; buildLetters(); }
+  /* Figurgrösse an die Strichstärke der Schrift koppeln, damit oben Platz zum Stehen ist */
+  const fh2 = Math.round(cl(letters.fs * .5, 34, desk() ? 86 : 70));
+  if (Math.abs(fh2 - FH) > 1) { FH = fh2; buildLetters(); for (let n = 0; n < 6 && letters.tooClose; n++) { letters.shrink *= .9; buildLetters(); } }
+  buildSpots();
+  Fs = LOOKS.map((_, i) => {
+    const F = makeFig(i);
+    let t = 0;
+    do { F.x = FH * .4 + Math.random() * (W - FH * .8); F.g = top() + Math.random() * (bottom() - top()); } while ((!clearAt(-1, F.x, F.g, .3) || Fs.some(o => Math.hypot(o.x - F.x, o.g - F.g) < FH * .5)) && ++t < 60);
+    F.surf = idAt(F.x, F.g); F.z0 = hOf(F.surf);
+    F.a = Math.random() * Math.PI * 2; F.pause = Math.random() < .3 ? Math.random() * 2 : 0;
+    Fs.push(F);
+    return F;
+  });
+}
+function step(F, dt){
+  let P;
+  const held = view === 'pick' && F.i === sel;
+  if (F.drag) {
+    F.ph += dt * 4;
+    P = walkPose(F, { stride: 0 });
+    const sw = Math.sin(clock * 3 + F.seed) * .05 + F.drag.vx * .002;
+    P.pelvis.z = .5; P.footL = { r: .07, f: sw, z: .02 }; P.footR = { r: -.07, f: -sw * .6, z: .03 };
+    P.handL = { r: .2, f: .02, z: .62 }; P.handR = { r: -.2, f: .02, z: .62 };
+    F.dropZ = .16;
+  } else if (F.act) {
+    P = actPose(F, dt);
+    if (F.act.t >= 1) { const A = F.act; F.surf = A.to; F.z0 = hOf(A.to);
+      /* nach dem Klettern auf dem neuen Boden stehen */
+      const pf = P.pelvis.f;
+      F.x += Math.cos(F.a) * pf * FH; F.g += Math.sin(F.a) * pf * FH * C;
+      F.act = null; F.pause = Math.random() < .5 ? .5 + Math.random() : 0;
+      /* gleiche Haltung im neuen Bezug, sonst springt die Figur für ein Bild */
+      P = walkPose(F, { stride: 0 }); }
+  } else {
+    /* Wandern: weiche Kurven, Abstand halten; ab und zu gezielt zu einer geprüften Kletterstelle */
+    F.z0 = hOf(F.surf);
+    const t = clock + F.seed;
+    let turn = .7 * Math.sin(t * .41) + .45 * Math.sin(t * 1.13 + 2);
+    const onTop = F.surf >= 0;
+    if (onTop) {
+      /* oben: stehen, umschauen, dann an derselben Stelle rückwärts hinunter */
+      F.topT = (F.topT || 0) + dt;
+      if (F.topT > (F.topWait || 3) && F.spot && !held) { actFromPlan(F, F.spot, true); F.topT = 0; F.spot = null; }
+    }
+    if (!onTop && !F.goal && !held && letters.spots.length && Math.random() < dt * .1) {
+      /* nur Stellen mit freiem Weg, freiem Einstieg und einem Buchstaben, auf dem niemand ist */
+      const sight = sp => { const dx = sp.S2.x - F.x, dg = sp.S2.g - F.g, n = Math.ceil(Math.hypot(dx, dg / C) / (FH * .15)); for (let k = 1; k <= n; k++) if (!clearAt(-1, F.x + dx * k / n, F.g + dg * k / n)) return false; return true; };
+      const busy = sp => Fs.some(o => o !== F && (o.goal === sp || o.spot === sp || o.surf === sp.id || (o.spot && o.spot.id === sp.id) || (o.goal && o.goal.id === sp.id) || (o.act && (o.act.to === sp.id || o.act.from === sp.id)) || Math.hypot(o.x - sp.S.x, (o.g - sp.S.g) / C) < FH * .6 || Math.hypot(o.x - sp.S2.x, (o.g - sp.S2.g) / C) < FH * .5));
+      const near = letters.spots.filter(sp => Math.hypot(sp.S.x - F.x, (sp.S.g - F.g) / C) < W * .45 && !busy(sp) && sight(sp));
+      if (near.length) { F.goal = near[Math.floor(Math.random() * near.length)]; F.goalT = 0; F.goalStage = 0; }
+    }
+    if (F.goal) {
+      F.goalT += dt;
+      const tgt = F.goalStage ? F.goal.S : F.goal.S2;
+      const gx = tgt.x - F.x, gg = (tgt.g - F.g) / C, d = Math.hypot(gx, gg);
+      let justArrived = false;
+      if (!F.goalStage && d < FH * .15) { F.goalStage = 1; justArrived = true; }
+      let da = Math.atan2(gg, gx) - F.a; da = Math.atan2(Math.sin(da), Math.cos(da));
+      turn = da * 3.5;
+      if (F.goalStage && !justArrived) { /* letztes Stück genau auf der Linie zur Kante */
+        F.a += da * Math.min(1, dt * 10);
+        const step = Math.min(d, F.want * FH * dt);
+        if (d > 1) { F.x += gx / d * step; F.g += gg / d * step * C; }
+        F.sp = lerp(F.sp, F.want * .7, dt * 4);
+      }
+      if (F.goalStage && !justArrived && d < Math.max(2, F.sp * FH * dt * 1.5) && !Fs.some(o => o !== F && !o.drag && Math.hypot(o.x - F.goal.S.x, (o.g - F.goal.S.g) / C) < FH * .34)) { F.goalStage = 0; F.waitT = 0; F.x = F.goal.S.x; F.g = F.goal.S.g; F.spot = F.goal; F.goal = null; F.topWait = 2 + Math.random() * 3; actFromPlan(F, F.spot, false); }
+      else if (F.goalT > 12 || (F.goalStage && (F.waitT = (F.waitT || 0) + dt) > .6)) { F.goal = null; F.goalStage = 0; F.waitT = 0; }
+    }
+    if (!F.act) {
+    const x0 = F.x, g0 = F.g;
+    for (const o of Fs) if (o !== F && !o.drag) {
+      const dx = o.x - F.x, dg = (o.g - F.g) / C, d = Math.hypot(dx, dg);
+      if (d < FH * .55 && d > 0) { const side = Math.sin(Math.atan2(dg, dx) - F.a); turn -= Math.sign(side || 1) * 2.4 * (1 - d / (FH * .55)) * (F.goal ? .4 : 1); }
+    }
+    const cx = W / 2 - F.x, cg = (Hh * .5 - F.g) / C;
+    if (!inBounds(F)) { const ta = Math.atan2(cg, cx); let d = ta - F.a; d = Math.atan2(Math.sin(d), Math.cos(d)); turn += d * 3; }
+    const moving = !(F.pause > 0 || held || RM || onTop || F.goalStage);
+    if (F.pause > 0) F.pause -= dt;
+    if (held) { let d = Math.PI / 2 - F.a; d = Math.atan2(Math.sin(d), Math.cos(d)); F.a += d * Math.min(1, dt * 5); }
+    const clear = (x, g) => clearAt(F.surf, x, g);
+    /* Richtung wählen: gewünschte Richtung, sonst die nächste freie; nie gegen eine Wand laufen */
+    const free = (a2, lim = 9) => { for (const L of [.12, .26, .42]) if (L <= lim && !clear(F.x + Math.cos(a2) * L * FH, F.g + Math.sin(a2) * L * FH * C)) return false; return true; };
+    let want = F.want;
+    if (moving) {
+      /* steht die Figur fest, sucht sie die offenste Richtung und geht dorthin */
+      if (F.escT > 0) F.escT -= dt;
+      else if ((F.vs || 0) < .05) { F.stillT = (F.stillT || 0) + dt;
+        if (F.stillT > .8) { let best = F.a, bn = -1; for (let k = 0; k < 16; k++) { const a2 = k * Math.PI / 8; let n = 0; for (const L of [.2, .4, .6, .8, 1]) { if (clear(F.x + Math.cos(a2) * L * FH, F.g + Math.sin(a2) * L * FH * C)) n++; else break; } if (n > bn) { bn = n; best = a2; } }
+          F.escA = best; F.escT = 1.2; F.stillT = 0; F.goal = null; F.goalStage = 0; } }
+      else F.stillT = 0;
+      const desired = F.escT > 0 ? F.escA : F.goal ? Math.atan2((F.goal.S2.g - F.g) / C, F.goal.S2.x - F.x) : F.a + cl(turn, -4, 4) * dt;
+      if (F.goal && F.escT <= 0) want *= cl(Math.hypot(F.goal.S2.x - F.x, (F.goal.S2.g - F.g) / C) / (FH * .7), .3, 1);
+      let pick = null, da0 = 0;
+      for (const da of [0, .35, -.35, .7, -.7, 1.1, -1.1, 1.6, -1.6, 2.2, -2.2, Math.PI]) {
+        const a2 = desired + da * (Math.sin(F.seed) > 0 ? 1 : -1); if (free(a2, F.goal && F.escT <= 0 && !da ? Math.hypot(F.goal.S2.x - F.x, (F.goal.S2.g - F.g) / C) / FH : 9)) { pick = a2; da0 = da; break; } }
+      if (F.goal) { F.goalBlock = pick !== null && Math.abs(pick - desired) < .01 ? 0 : (F.goalBlock || 0) + dt; if (F.goalBlock > 1.2) { F.goal = null; F.goalBlock = 0; } }
+      if (pick === null) { want = 0; F.a += 2 * dt; }
+      else { let d = pick - F.a; d = Math.atan2(Math.sin(d), Math.cos(d)); F.a += Math.sign(d) * Math.min(Math.abs(d), (F.goal || F.escT > 0 || da0 ? 5 : 2.2) * dt); if (Math.abs(d) > 1) want *= .35; }
+    }
+    F.sp = lerp(F.sp, moving ? want : 0, Math.min(1, dt * 4));
+    const v = F.sp * FH;
+    if (v > 1 && moving) {
+      const ca = Math.cos(F.a), sa = Math.sin(F.a);
+      const nx = F.x + ca * v * dt, ng = F.g + sa * v * dt * C;
+      /* steht die Figur knapp an einer Wand (nach dem Klettern), darf sie sich wegbewegen */
+      if (clear(nx, ng) || (idAt(nx, ng) === F.surf && free(F.a))) { F.x = nx; F.g = ng; }
+      else F.sp *= .5;
+      if (!F.goal && Math.random() < dt * .05) F.pause = 1 + Math.random() * 2.5;
+    }
+    /* Abstand halten: Figuren stehen nie ineinander */
+    if (!F.goalStage) for (const o of Fs) if (o !== F && !o.drag && (o.act || o.surf === F.surf)) {
+      const dx = F.x - o.x, dg = (F.g - o.g) / C, d = Math.hypot(dx, dg), m = FH * .34;
+      if (d < m) { const k = d > .01 ? 1 / d : 0, push = Math.min(m - d, FH * 1.5 * dt), ux = d > .01 ? dx * k : Math.cos(F.seed), ug = d > .01 ? dg * k : Math.sin(F.seed);
+        const px = F.x + ux * push, pg = F.g + ug * push * C; if (clear(px, pg)) { F.x = px; F.g = pg; } }
+    }
+    /* Beine nur bewegen, wenn die Figur wirklich vorankommt */
+    const moved = Math.hypot(F.x - x0, (F.g - g0) / C);
+    F.vs = lerp(F.vs || 0, moved / Math.max(dt, 1e-4) / FH, Math.min(1, dt * 10));
+    }
+    if (F.act) { P = actPose(F, dt); F.lastPel = P.pelvis; return P; }
+    /* ein Schritt pro halbe Schrittlänge */
+    const vs = F.vs || 0, stride = .36 * cl(vs / .65, 0, 1.1);
+    F.ph += dt * (vs * FH) / (2 * Math.max(.05, stride) * FH) * Math.PI * 2 * (vs > .02 ? 1 : 0);
+    P = walkPose(F, { stride });
+    if (vs < .05) { /* ruhig stehen: atmen, Gewicht verlagern, umschauen */
+      P.pelvis.r = Math.sin(t * .8) * .01; P.pelvis.z += Math.sin(t * 2.2) * .003; P.yaw = Math.sin(t * .6) * .18;
+    }
+    if (held || F.wave) { const w = Math.sin(clock * 9); P.handR = { r: -.24, f: .08, z: .98 + w * .02 }; P.wave = w; }
+    if (F.dropZ) { F.dropV = (F.dropV || 0) + 9 * dt; F.dropZ = Math.max(0, F.dropZ - F.dropV * dt); if (!F.dropZ) { F.dropV = 0; F.land = .35; } }
+    if (F.land > 0) { F.land -= dt; const q = Math.sin(cl(F.land / .35) * Math.PI); P.pelvis.z -= q * .08; P.lean += q * .2; }
+  }
+  if (P.wave !== undefined) { P.handR.f += P.wave * .05; }
+  F.lastPel = P.pelvis;
+  return P;
+}
+function render(dt){
+  for (const k in GL.parts) { GL.parts[k].nc = 0; GL.parts[k].ns = 0; }
+  const c = ctx;
+  c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  c.clearRect(0, 0, W, Hh);
+  for (const F of Fs) {
+    const P = step(F, dt), J = solveFig(F, P);
+    const base = { x: F.x, gy: F.g, z: baseZ(F) + (F.dropZ || 0) * FH };
+    figTo3D(F, J, base);
+    F.base = base;
+  }
+  for (const k in GL.parts) { const P = GL.parts[k]; P.c.count = P.nc; P.sp.count = P.ns; P.c.instanceMatrix.needsUpdate = P.sp.instanceMatrix.needsUpdate = true; }
+  /* erst Buchstaben allein (für die Konturen), dann alles (für die Figuren mit Verdeckung) */
+  const figs = []; for (const k in GL.parts) figs.push(GL.parts[k].c, GL.parts[k].sp);
+  figs.forEach(m => m.visible = false);
+  GL.r.setRenderTarget(GL.rt); GL.r.setClearColor(0x80ff80, 0); GL.r.clear(); GL.r.render(GL.scene, GL.cam);
+  figs.forEach(m => m.visible = true);
+  GL.r.setRenderTarget(GL.rtI); GL.r.clear(); GL.r.render(GL.scene, GL.cam);
+  GL.r.setRenderTarget(null); GL.r.render(GL.post, GL.pcam);
+  /* Ringe am Boden, Namen und Geschenke obenauf */
+  for (const F of Fs) {
+    const base = F.base; if (!base) continue;
+    const gy = sy(F.g, 0, base.z);
+    if ((view === 'pick' && F.i === sel) || (view === 'lobby' && F.i === S.me)) {
+      const k = 1 + Math.sin(clock * 4) * .05;
+      c.beginPath(); c.ellipse(F.x, gy, FH * .32 * k, FH * .32 * C * k, 0, 0, 7); c.lineWidth = 2; c.strokeStyle = PINK; c.stroke();
+    }
+    if (F.land > .2) { const q = 1 - (F.land - .2) / .15; c.beginPath(); c.ellipse(F.x, gy, FH * (.16 + q * .18), FH * (.16 + q * .18) * C, 0, 0, 7); c.lineWidth = 1.2; c.strokeStyle = `rgba(0,0,0,${(1 - q) * .7})`; c.stroke(); }
+  }
+  c.textAlign = 'center'; c.textBaseline = 'bottom';
+  for (const F of Fs) {
+    const b = F.box; if (!b) continue;
+    const name = F.i === S.me ? 'Du' : S.claims[F.i];
+    let y = b.head[1] - 2;
+    if (view === 'lobby' && S.draws[S.me] == null && eligible().includes(F.i)) {
+      const hop = Math.sin(clock * 4 + F.seed) * 2 - (F.hit ? 6 : 0), s2 = (F.hit ? 1.5 : 1) * (desk() ? 1.2 : 1);
+      drawGift(c, b.head[0], y - 10 + hop, 9 * s2); y -= 24 * s2;
+    }
+    if (name) {
+      c.font = `500 ${desk() ? 14 : 12}px Jost, Futura, sans-serif`;
+      const w = c.measureText(name).width + 8;
+      c.fillStyle = 'rgba(255,255,255,.9)'; const lh = desk() ? 18 : 15; c.fillRect(b.head[0] - w / 2, y - lh, w, lh);
+      c.fillStyle = F.i === S.me ? INK : PINK; c.fillText(name, b.head[0], y - 1);
+    }
+  }
+}
+function drawGift(c, x, y, s){
+  c.save(); c.translate(x, y); c.lineWidth = 1.3; c.strokeStyle = INK; c.fillStyle = PINK; c.lineJoin = 'round';
+  c.beginPath(); c.rect(-s * .8, -s * .2, s * 1.6, s * 1.1); c.fill(); c.stroke();
+  c.beginPath(); c.rect(-s * .95, -s * .55, s * 1.9, s * .4); c.fill(); c.stroke();
+  c.beginPath(); c.moveTo(0, -s * .55); c.lineTo(0, s * .9); c.stroke();
+  c.beginPath(); c.moveTo(0, -s * .55); c.bezierCurveTo(-s * .2, -s * 1.2, -s * .9, -s * 1, -s * .3, -s * .55); c.moveTo(0, -s * .55); c.bezierCurveTo(s * .2, -s * 1.2, s * .9, -s * 1, s * .3, -s * .55); c.stroke();
+  c.restore();
+}
+
+
+/* ---------- Grosse Ansichten ---------- */
+function drawBig(canvas, list){
+  const r = canvas.getBoundingClientRect(); if (!r.width) return;
+  const d = Math.min(3, Math.round(devicePixelRatio || 1)) || 1;
+  if (canvas.width !== Math.round(r.width * d)) { canvas.width = Math.round(r.width * d); canvas.height = Math.round(r.height * d); }
+  const c = canvas.getContext('2d'); c.setTransform(d, 0, 0, d, 0, 0); c.clearRect(0, 0, r.width, r.height);
+  const keepFH = FH; FH = Math.min(r.height * .86 / (HZ + .1), r.width / list.length * .95);
+  list.forEach((o, j) => {
+    const F = o.F, t = clock + F.seed;
+    const P = walkPose(F, { stride: 0 });
+    P.pelvis.r = Math.sin(t * .9) * .012; P.pelvis.z += Math.sin(t * 2.4) * .004; P.yaw = Math.sin(t * .7) * .1;
+    if (o.wave) { const w = Math.sin(clock * 8 + j); P.handR = { r: -.25, f: .08 + w * .05, z: .98 }; }
+    const saveA = F.a; F.a = Math.PI / 2 + (o.turn || 0);
+    const J = solveFig(F, P);
+    drawFig(c, F, J, { x: r.width * (j + .5) / list.length, gy: r.height * .94, z: 0 }, { lw: 2.2 });
+    F.a = saveA;
+  });
+  FH = keepFH;
+}
+
+/* ---------- Ablauf ---------- */
+function say(t, shake){ const el = $('say'); el.textContent = t; if (shake) { el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); } }
+function setView(v){
+  view = v;
+  $('scene').classList.toggle('away', v === 'name' || v === 'result');
+  $('nameStage').classList.toggle('on', v === 'name');
+  $('resStage').classList.toggle('on', v === 'result');
+  $('scroll').hidden = v !== 'pick';
+  $('drawBtn').hidden = v !== 'lobby';
+  if (v === 'pick') say(sel == null ? 'Wähle deinen Avatar. Tippe auf eine schwarze Figur.' : 'Gute Wahl. Scrolle weiter.');
+  if (v === 'name') { say('Trag deinen Namen ein.'); setTimeout(() => $('nameIn').focus(), RM ? 0 : 700); }
+  if (v === 'lobby') {
+    const mine = S.draws[S.me];
+    $('drawBtn').textContent = mine != null ? 'Mein Los ansehen' : 'Auslosen';
+    say(mine != null ? 'Du hast dein Los schon gezogen.' :
+      eligible().length ? 'Wer ein Geschenk über dem Kopf hat, ist noch im Topf. Tippe auf Auslosen.' : 'Noch niemand im Topf. Warte, bis sich die anderen angemeldet haben.');
+  }
+  if (v === 'result') say('Psst. Behalte es für dich.');
+  $('scroll').classList.toggle('ready', sel != null);
+}
+function tap(F){
+  if (view !== 'pick') return;
+  if (S.claims[F.i] != null) { say(`Dieser Avatar gehört schon ${S.claims[F.i]}. Nimm eine schwarze Figur.`, true); return; }
+  sel = F.i; F.pause = 0; setView('pick');
+}
+
+/* Ziehen und Antippen */
+let drag = null;
+const pick = (x, y) => [...Fs].sort((a, b) => b.g - a.g).find(F => F.box && x >= F.box.x0 - 12 && x <= F.box.x1 + 12 && y >= F.box.y0 - 12 && y <= F.box.y1 + 12);
+cv.addEventListener('pointerdown', e => {
+  if (view !== 'pick' && view !== 'lobby') return;
+  const F = pick(e.clientX, e.clientY); if (!F) return;
+  cv.setPointerCapture(e.pointerId);
+  drag = { F, sx: e.clientX, sy: e.clientY, moved: false, ox: F.x - e.clientX, og: F.g - e.clientY };
+  cv.classList.add('grabbing');
+});
+cv.addEventListener('pointermove', e => {
+  if (!drag) { const F = (view === 'pick' || view === 'lobby') && pick(e.clientX, e.clientY); cv.classList.toggle('grab', !!F); return; }
+  const F = drag.F;
+  if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 6) { drag.moved = true; F.act = null; F.drag = { vx: 0 }; F.dropZ = 0; }
+  if (!drag.moved) return;
+  const nx = e.clientX + drag.ox;
+  F.drag.vx = lerp(F.drag.vx, (nx - F.x) / .016, .3);
+  /* unter dem Finger: Boden oder Blockoberfläche */
+  const gy = e.clientY + drag.og + .16 * FH * HZ;
+  let s = -1, zz = 0;
+  for (const id of [...new Set(letters.G.map((_, i) => i))]) {
+    const g2 = gy + letters.G[id].H * HZ; if (idAt(nx, g2) === id && letters.G[id].H > zz) { s = id; zz = letters.G[id].H; }
+  }
+  F.x = nx; F.surf = s; F.z0 = hOf(s); F.g = gy + F.z0 * HZ;
+  F.a = Math.PI / 2;
+});
+const endDrag = () => {
+  if (!drag) return;
+  const F = drag.F; cv.classList.remove('grabbing');
+  if (drag.moved) { F.drag = null; F.dropZ = .16; F.dropV = 0; F.goal = null; F.spot = null;
+    F.x = cl(F.x, FH * .5, W - FH * .5); F.g = cl(F.g, top(), bottom());
+    /* auf freien Boden neben den Buchstaben stellen */
+    let best = null; for (let r = 0; r < FH * 3 && !best; r += 3) for (let a = 0; a < 16; a++) { const x = F.x + Math.cos(a * .3927) * r, g = F.g + Math.sin(a * .3927) * r * C; if (clearAt(-1, x, g)) { best = { x, g }; break; } }
+    if (best) { F.x = best.x; F.g = best.g; } F.surf = -1; F.z0 = 0; }
+  else tap(F);
+  drag = null;
+};
+cv.addEventListener('pointerup', endDrag);
+cv.addEventListener('pointercancel', endDrag);
+
+/* Weiter: Knopf, Scrollen, Wischen */
+function next(){
+  if (view !== 'pick') return;
+  if (sel == null) { say('Wähle zuerst deinen Avatar. Tippe auf eine schwarze Figur.', true); return; }
+  $('nameIn').value = ''; setView('name');
+}
+function back(){ if (view === 'name') setView('pick'); }
+$('scroll').addEventListener('click', next);
+let lockW = 0;
+addEventListener('wheel', e => { const now = Date.now(); if (now < lockW || Math.abs(e.deltaY) < 20) return; lockW = now + 1000; e.deltaY > 0 ? next() : back(); }, {passive:true});
+let ty = null;
+addEventListener('touchstart', e => { ty = drag || e.target.closest('input,button') ? null : e.touches[0].clientY; }, {passive:true});
+addEventListener('touchend', e => { if (ty === null || drag) { ty = null; return; } const d = ty - e.changedTouches[0].clientY; ty = null; if (d > 60) next(); if (d < -60) back(); }, {passive:true});
+addEventListener('keydown', e => { if (e.target.closest('input')) return; if (['ArrowDown','PageDown'].includes(e.key)) next(); if (['ArrowUp','PageUp','Escape'].includes(e.key)) back(); });
+
+$('nameForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const n = $('nameIn').value.trim();
+  if (sel == null) { setView('pick'); return; }
+  if (!n) { say('Bitte trag zuerst deinen Namen ein.', true); return; }
+  if (Object.values(S.claims).some(c => c.toLowerCase() === n.toLowerCase())) { say(n + ' ist schon auf dem Platz. Nimm zum Beispiel noch den ersten Buchstaben vom Nachnamen dazu.', true); return; }
+  S.claims[sel] = n; S.me = sel; sel = null; save(); $('nameIn').blur(); setView('lobby');
+});
+function showResult(){
+  const r = S.draws[S.me];
+  $('resTxt').innerHTML = `Du beschenkst <b>${esc(S.claims[r])}</b>`;
+  setView('result');
+}
+$('drawBtn').addEventListener('click', () => {
+  if (S.draws[S.me] != null) { showResult(); return; }
+  const pool = eligible();
+  if (!pool.length) { say('Noch niemand im Topf. Warte, bis sich die anderen angemeldet haben.', true); return; }
+  const pickI = pool[Math.floor(Math.random() * pool.length)];
+  $('drawBtn').disabled = true;
+  const hops = RM ? [] : Array.from({length: 9}, (_, k) => pool[k % pool.length]).concat(pickI);
+  let k = 0;
+  const tick = () => {
+    Fs.forEach(F => F.hit = false);
+    if (k < hops.length) { Fs[hops[k]].hit = true; k++; setTimeout(tick, 90 + k * 22); return; }
+    S.draws[S.me] = pickI; save(); $('drawBtn').disabled = false;
+    setTimeout(showResult, RM ? 0 : 300);
+  };
+  tick();
+});
+$('resBack').addEventListener('click', () => setView('lobby'));
+$('reset').addEventListener('click', () => { S = fresh(); sel = null; save(); build(); setView('pick'); });
+
+function loop(t){
+  const dt = last ? Math.min(.04, (t - last) / 1000) : 0; last = t; clock += dt;
+  if (view === 'pick' || view === 'lobby') render(dt);
+  if (view === 'name' && sel != null) drawBig($('nameC'), [{ F: Fs[sel], wave: true }]);
+  if (view === 'result') drawBig($('resC'), [{ F: Fs[S.me], wave: false, turn: -.35 }, { F: Fs[S.draws[S.me]], wave: true, turn: .35 }]);
+  requestAnimationFrame(loop);
+}
+let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(build, 200); });
+(document.fonts ? document.fonts.load('700 100px Jost').catch(() => {}) : Promise.resolve()).then(() => {
+  build(); setView(S.me != null ? 'lobby' : 'pick'); requestAnimationFrame(loop);
+});
+}
+</script>
+</body>
+</html>
