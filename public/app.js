@@ -771,10 +771,12 @@ function dogStep(dt){
     POOPS.push({ x: D.x - Math.cos(D.a) * FH * .32, g: D.g - Math.sin(D.a) * FH * .32 * C, born: clock, who: null }); }
   if (D.mode !== 'poop') D.dropped = false;
 }
-/* ---------- Katze: taucht auf, wenn jemand online kommt; Mellow jagt sie ein paar Sekunden ---------- */
-let CAT = null, catAt = -1e9;
+/* ---------- Katze: beim Laden, wenn jemand die Seite öffnet und alle 30 Sekunden; Mellow jagt sie ein paar Sekunden ---------- */
+let CAT = null, catAt = -1e9, catWant = -1, catSlot = null;
+/* Wunsch merken: die Katze kommt, sobald Mellow frei ist (bis zu 6 Sekunden später) */
+function wantCat(){ catWant = clock + 6; }
 function spawnCat(){
-  const D = DOG; if (!D || CAT || (view !== 'pick' && view !== 'lobby') || clock - catAt < 25 || !['walk', 'sniff', 'visit'].includes(D.mode)) return;
+  const D = DOG; if (!D || CAT || (view !== 'pick' && view !== 'lobby') || clock - catAt < 10 || !['walk', 'sniff', 'visit'].includes(D.mode)) return;
   let spot = null;
   for (let t = 0; t < 60 && !spot; t++) { const a = Math.random() * 6.283, r = FH * (2.5 + Math.random() * 2.5), x = D.x + Math.cos(a) * r, g = D.g + Math.sin(a) * r * C;
     if (x > FH && x < W - FH && g > top() && g < fbot() && clearAt(-1, x, g, .3)) spot = { x, g }; }
@@ -785,6 +787,10 @@ function spawnCat(){
   if (D.vF) D.vF = null; D.mode = 'chase'; D.t = CAT.life + .5;
 }
 function catStep(dt){
+  /* alle 30 Sekunden, auf allen Geräten zur gleichen Zeit */
+  const now = srvNow(), k = Math.floor(now / 30000), t0 = k * 30000 + 12000 + hh(k, 77) * 8000;
+  if (catSlot !== k && now >= t0 && now < t0 + 2000) { catSlot = k; wantCat(); }
+  if (!CAT && clock < catWant) { spawnCat(); if (CAT) catWant = -1; }
   const K = CAT; if (!K) return;
   K.t += dt; K.ph += dt * (4 + K.sp * 16);
   const D = DOG;
@@ -2095,7 +2101,7 @@ function rtStart(){
       if (RT.es) RT.es.close();
       const es = new EventSource(`${RT_HOST}/sse?v=1.2&channels=${encodeURIComponent(d.channel)}&accessToken=${encodeURIComponent(d.token)}` + (RT.last ? '&lastEvent=' + encodeURIComponent(RT.last) : ''));
       RT.es = es;
-      es.onopen = () => { RT.wait = 2000; heartbeat(); };
+      es.onopen = () => { RT.wait = 2000; heartbeat(); if (!RT.hello) { RT.hello = true; rtSend({ t: 'hello' }); } };
       es.onmessage = e => { if (e.lastEventId) RT.last = e.lastEventId; try { onRt(JSON.parse(e.data)); } catch (err) {} };
       /* abgelaufen oder Verbindung weg: sauber neu verbinden, mit wachsender Pause */
       es.onerror = () => { if (RT.es !== es) return; es.close(); RT.es = null; clearTimeout(RT.rn); RT.rn = setTimeout(rtStart, RT.wait); RT.wait = Math.min(RT.wait * 2, 60000); };
@@ -2124,11 +2130,12 @@ function onRt(m){
   if (!d || typeof d !== 'object') return;
   /* nur angemeldete Figuren dürfen ihre eigene Figur bewegen; alles andere wird ignoriert */
   const from = typeof m.clientId === 'string' && /^f\d{1,2}$/.test(m.clientId) ? +m.clientId.slice(1) : null;
-  if (from != null) { if (d.t === 'bye') { delete ONLINE[from]; return; } const was = isOnline(from); ONLINE[from] = performance.now(); if (!was && from !== S.me && performance.now() > 30000) spawnCat(); if (d.t === 'hb') return; }
+  if (from != null) { if (d.t === 'bye') { delete ONLINE[from]; return; } const was = isOnline(from); ONLINE[from] = performance.now(); if (!was && from !== S.me && performance.now() > 30000) wantCat(); if (d.t === 'hb') return; }
   const now = performance.now(), key = d.t + (from ?? 'v');
   if (now - (RT.seen[key] || 0) < (d.t === 'poop' ? 2500 : 400)) return; RT.seen[key] = now;
   if (d.t === 'trick' && from != null && from !== S.me && typeof d.k === 'string' && Object.hasOwn(TRICKS, d.k) && S.claims[from] != null) { const F = fig(from), at = Number(d.at); if (F && Number.isFinite(at) && Math.abs(at - srvNow()) < 15000) startTrick(d.k, F, at); }
   else if (d.t === 'poop') dogPoop();
+  else if (d.t === 'hello') wantCat();
   else if (d.t === 'santa' && d.k === SANTA.k) popSanta();
   else if (d.t === 'join' && from != null && (view === 'pick' || view === 'lobby') && !busy) refresh().then(syncFigs).catch(() => {});
 }
@@ -2142,6 +2149,8 @@ Promise.all([document.fonts ? document.fonts.load('700 100px Jost').catch(() => 
   const go = () => { if (innerWidth < 50 || innerHeight < 50) { setTimeout(go, 200); return; } build(); setView(S.me != null ? 'lobby' : 'pick'); requestAnimationFrame(loop); };
   go();
   rtStart();
+  /* beim Laden kommt nach ein paar Sekunden eine Katze vorbei */
+  setTimeout(wantCat, 3500);
   setInterval(() => { if (document.visibilityState === 'visible' && (view === 'pick' || view === 'lobby') && !busy) refresh().then(syncFigs).catch(() => {}); }, 12000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && S.me != null) rtSend({ t: 'bye' }); if (document.visibilityState === 'visible') { heartbeat(); refresh().then(syncFigs).catch(() => {}); if (RT.on && (!RT.es || RT.es.readyState === 2)) rtStart(); } });
 });
