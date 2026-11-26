@@ -1522,7 +1522,7 @@ function setView(v, quiet){
   if (v === 'lobby') {
     const mine = S.draws[S.me];
     $('drawBtn').textContent = mine != null ? 'See my draw' : 'Draw';
-    if (open) say("You're in. The draw opens on 1 December at 12:00. You can play with your avatar in the meantime.");
+    if (open) say("You're in. The draw opens on December 1st at 12:00. You can play with your avatar in the meantime.");
     else say(mine != null ? "You've already drawn." : 'Registration is closed. Everyone with a gift is in the pot. Tap Draw.');
   }
   if (v === 'result') say('Psst. Keep it to yourself.');
