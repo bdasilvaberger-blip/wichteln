@@ -219,7 +219,7 @@ function buildLetters(){
     const shapes = glyphShapes(g.ch, fs);
     const geo = new THREE.ExtrudeGeometry(shapes, { depth: g.H, bevelEnabled: false, curveSegments: 14 });
     geo.rotateX(-Math.PI / 2);
-    const m = new THREE.Mesh(geo, GL.mat[g.info ? 4 : 0]);
+    const m = new THREE.Mesh(geo, GL.mat[0]);
     /* Innenräume (0, 6) oben zudecken: nur die Öffnung als Linie, keine Innenwände */
     const holes = []; shapes.forEach(sh => sh.holes.forEach(h => holes.push(new THREE.Shape(h.getPoints()))));
     if (holes.length) { const cg = new THREE.ShapeGeometry(holes, 14); cg.rotateX(-Math.PI / 2); cg.translate(0, g.H + .2, 0); m.add(new THREE.Mesh(cg, GL.mat[3])); }
@@ -243,7 +243,7 @@ function initGL(){
   GL.textMat = (tex, id) => new THREE.ShaderMaterial({ uniforms: { map: { value: tex }, uId: { value: id } }, transparent: false, side: THREE.DoubleSide,
     vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: `uniform sampler2D map; uniform float uId; varying vec2 vUv; void main(){ if (texture2D(map, vUv).a < .5) discard; gl_FragColor = vec4(.5, .5, 1., uId / 255.0); }` });
-  GL.mat = [0, 1, 2, 3, 4].map(id => new THREE.ShaderMaterial({ vertexShader: vs, fragmentShader: fsx, uniforms: { uId: { value: id } }, side: THREE.DoubleSide }));
+  GL.mat = [0, 1, 2, 3].map(id => new THREE.ShaderMaterial({ vertexShader: vs, fragmentShader: fsx, uniforms: { uId: { value: id } }, side: THREE.DoubleSide }));
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), GL.mat[0]); ground.rotation.x = -Math.PI / 2; ground.position.y = -.01;
   GL.scene.add(ground);
   GL.cam = new THREE.OrthographicCamera(-1, 1, 1, -1, -6000, 6000);
@@ -266,10 +266,8 @@ function initGL(){
     uniforms: { tN: { value: null }, tD: { value: null }, tI: { value: null }, uRes: { value: new THREE.Vector2() }, uR: { value: 2 }, uDT: { value: .0004 }, uPink: { value: new THREE.Color(PINK) } },
     vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
     fragmentShader: `uniform sampler2D tN; uniform sampler2D tD; uniform sampler2D tI; uniform vec2 uRes; uniform float uR; uniform float uDT; uniform vec3 uPink; varying vec2 vUv;
-      float pinkE = 0.0;
       float edgeAt(vec2 o, vec4 c0, float d0){
         vec4 a = texture2D(tN, vUv + o), b = texture2D(tN, vUv - o);
-        pinkE = max(pinkE, max(step(abs(a.w * 255.0 - 4.0), .5), step(abs(b.w * 255.0 - 4.0), .5)));
         float da = texture2D(tD, vUv + o).x, db = texture2D(tD, vUv - o).x;
         vec3 n0 = c0.xyz * 2.0 - 1.0;
         float e = 0.0;
@@ -288,8 +286,7 @@ function initGL(){
         e = max(e, edgeAt(vec2(uR, -uR) * .707 * px, c0, d0));
         /* Konturen kommen aus dem Bild ohne Figuren: keine Lücken, wo eine Figur davorsteht */
         float id = floor(texture2D(tI, vUv).w * 255.0 + .5);
-        pinkE = max(pinkE, step(abs(c0.w * 255.0 - 4.0), .5));
-        vec3 col = mix(vec3(1.0), pinkE > .5 ? uPink : vec3(0.0), e);
+        vec3 col = mix(vec3(1.0), vec3(0.0), e);
         if (id > .5 && id < 1.5) col = vec3(0.0);
         if (id > 1.5 && id < 2.5) col = uPink;
         if (id > 5.5 && id < 6.5) col = vec3(1.0);
@@ -975,8 +972,6 @@ function santaStep(dt){
   }
   for (const G of GIFTS) {
     if (G.state === 'fall') { G.vy += FH * 9 * dt; G.y += G.vy * dt; if (G.y >= G.landY) { G.y = G.landY; if (G.vy > FH * 2) G.vy = -G.vy * .3; else { G.vy = 0; G.state = 'rest'; } } }
-    else if (G.state === 'up') { G.t += dt / .7; const e = ez(cl(G.t)), tx = SANTA.on ? SANTA.x - SANTA.f.dir * SANTA.R * .3 : G.fx, ty = SANTA.on ? SANTA.y : G.fy - FH * 3;
-      G.x = lerp(G.fx, tx, e); G.y = lerp(G.fy, ty, e); G.s = 1 - e * .7; if (G.t >= 1) G.gone = true; }
   }
   GIFTS = GIFTS.filter(G => !G.gone);
 }
@@ -1001,7 +996,7 @@ function dropGift(id, k, i){
     if (x > FH * .4 && x < W - FH * .4 && idAt(x, g) === -1 && clearAt(-1, x, g, .2) && inView(x, g)) spot = { x, g };
   }
   if (!spot) return;
-  GIFTS.push({ id, gift: true, x: spot.x, g: spot.g, y, vy: -FH * .4, landY: spot.g, state: 'fall', s: 1, spin: (hh(k, 30 + i) - .5) * .6 });
+  GIFTS.push({ id, gift: true, x: spot.x, g: spot.g, y, vy: -FH * .4, landY: spot.g, state: 'fall', spin: (hh(k, 30 + i) - .5) * .6 });
 }
 /* Santa zu Fuss: kommt vom Rand, sammelt jedes Geschenk einzeln auf und geht wieder */
 function spawnWalker(k){
@@ -1076,7 +1071,7 @@ function santaTo3D(){
   S2.box = { x0: Math.min(...xs) - R * .15, x1: Math.max(...xs) + R * .15, y0: yTop - R * .15, y1: yBot + R * .15 };
 }
 /* Geschenk antippen: die Infos öffnen sich */
-const onGift = (x, y) => { const s = FH * .2; return GIFTS.some(G => !G.popped && G.state !== 'up' && Math.abs(x - G.x) < s * 1.3 && Math.abs(y - (G.y - s * .9)) < s * 1.4); };
+const onGift = (x, y) => { const s = FH * .2; return GIFTS.some(G => !G.popped && Math.abs(x - G.x) < s * 1.3 && Math.abs(y - (G.y - s * .9)) < s * 1.4); };
 const onSanta = (x, y) => { const b = SANTA.on && SANTA.box; return !!b && x > b.x0 && x < b.x1 && y > b.y0 && y < b.y1; };
 function popSanta(){
   if (!SANTA.on || SANTA.popped[SANTA.k]) return false;
@@ -1089,7 +1084,7 @@ function popSanta(){
 }
 function drawGifts(c){
   const s = FH * .2;
-  for (const G of GIFTS) { if (G.popped) continue; c.save(); c.translate(G.x, G.y - s * .9 * G.s); if (G.state === 'fall') c.rotate(G.spin * Math.sin(G.y * .02)); drawGift(c, 0, 0, s * G.s); c.restore(); }
+  for (const G of GIFTS) { if (G.popped) continue; c.save(); c.translate(G.x, G.y - s * .9); if (G.state === 'fall') c.rotate(G.spin * Math.sin(G.y * .02)); drawGift(c, 0, 0, s); c.restore(); }
 }
 /* Seifenblase: dünner Ring, der aufgeht und verblasst, dazu kleine Spritzer */
 function drawPops(c, dt){
@@ -1585,7 +1580,7 @@ function render(dt){
     const name = F.i === S.me ? 'You' : S.claims[F.i];
     let y = Math.min(b.head[1], b.y0 + FH * .12) - 2;
     if (view === 'lobby' && S.draws[S.me] == null && !F.reveal && !BOX.anim && eligible().includes(F.i)) {
-      const hop = Math.sin(clock * 4 + F.seed) * 2 - (F.hit ? 6 : 0), s2 = (F.hit ? 1.5 : 1) * (desk() ? 1.2 : 1);
+      const hop = Math.sin(clock * 4 + F.seed) * 2, s2 = desk() ? 1.2 : 1;
       drawGift(c, b.head[0], y - 10 + hop, 9 * s2); y -= 24 * s2;
     }
     if (name) {
