@@ -1056,34 +1056,41 @@ function tapBox(){
 }
 function boxNote(h, t){ $('boxNoteT').textContent = h; $('boxNoteD').textContent = t; if (!$('boxNote').open) { faqAt = performance.now(); $('boxNote').showModal(); } }
 
-/* ---------- Santa: fliegt ab und zu mit Schlitten und Rentieren vorbei ----------
+/* ---------- Santa: gleitet mit Schlitten und Rentieren am Boden zwischen den Buchstaben durch ----------
    Der Fahrplan hängt nur an der Serverzeit, darum sehen alle ihn im selben Moment.
-   Mal wirft er Geschenke ab, mal holt er sie wieder. Antippen: er zerplatzt wie eine Seifenblase. */
+   Mal wirft er Geschenke ab, mal holt er sie zu Fuss wieder. Nie beides gleichzeitig.
+   Antippen: er zerplatzt wie eine Seifenblase. */
 const SLOT = 30000, FLY_MS = 9000;
 const hh = (k, n) => { const v = Math.sin(k * 127.1 + n * 311.7) * 43758.5453; return v - Math.floor(v); };
 const SANTA = { k: null, on: false, popped: {}, box: null, x: 0, y: 0 };
 let GIFTS = [], POPS = [];
 function santaFlight(k){
-  return { k, kind: hh(k, 1) < .55 ? 'drop' : 'collect', t0: k * SLOT + 1500 + hh(k, 2) * (SLOT - FLY_MS - 3000), dir: hh(k, 3) < .5 ? 1 : -1, row: hh(k, 4) };
+  const drop = hh(k, 1) < .55;
+  /* zu Fuss kommt er früh im Takt, damit er weg ist, bevor der nächste Schlitten kommt */
+  return { k, kind: drop ? 'drop' : 'collect', t0: k * SLOT + 1500 + hh(k, 2) * (drop ? SLOT - FLY_MS - 3000 : 3000), dir: hh(k, 3) < .5 ? 1 : -1, row: hh(k, 4) };
 }
 function santaStep(dt){
   const now = srvNow(), k = Math.floor(now / SLOT), f = santaFlight(k);
   SANTA.on = false; SANTA.box = null;
   if (SANTA.walker && !Fs.includes(SANTA.walker)) SANTA.walker = null;
-  if (f && f.kind === 'collect' && now >= f.t0 && now < f.t0 + 15000 && !SANTA.popped[k] && !SANTA.walker && !(SANTA.walked && SANTA.walked[k]) && GIFTS.some(G => G.state === 'rest')) spawnWalker(k);
+  const flying = f && f.kind === 'drop' && now >= f.t0 && now < f.t0 + FLY_MS && !SANTA.popped[k];
+  if (f && f.kind === 'collect' && now >= f.t0 && now < f.t0 + 4000 && !SANTA.popped[k] && !SANTA.walker && !(SANTA.walked && SANTA.walked[k]) && GIFTS.some(G => G.state === 'rest')) spawnWalker(k);
+  /* nur ein Santa aufs Mal: kommt der Schlitten, geht der Fussgänger */
+  if (SANTA.walker && flying && !SANTA.walker.leave) { SANTA.walker.leave = true; SANTA.walker.fetch = null; }
   if (SANTA.walker) { const F = SANTA.walker; walkerThink(F, dt); if (F.box && !F.leave) { SANTA.on = true; SANTA.k = F.k; SANTA.box = F.box; } }
-  if (f && f.kind === 'drop' && now >= f.t0 && now < f.t0 + FLY_MS && !SANTA.popped[k]) {
-    const u = (now - f.t0) / FLY_MS, R = FH * (desk() ? 1.9 : 1.6), span = W + R * 5;
-    SANTA.k = k; SANTA.on = true; SANTA.f = f; SANTA.u = u; SANTA.R = R;
-    SANTA.x = f.dir > 0 ? -R * 2.2 + span * u : W + R * 2.2 - span * u;
-    /* in der oberen Bildhälfte, ganz vorne, damit nichts ihn verdeckt */
-    const yScr = top() + FH * .3 + f.row * Math.max(0, fbot() - top() - FH * 1.1) + Math.sin(now / 420) * FH * .08;
-    SANTA.g = Hh + FH * 2; SANTA.z = (SANTA.g - yScr) / HZ;
-    santaTo3D();
-    /* Geschenke fallen lassen */
-    for (let i = 0; i < 4; i++) {
-      const at = .18 + i * .19 + (hh(k, 10 + i) - .5) * .06, id = k * 10 + i;
-      if (u >= at && !GIFTS.some(G => G.id === id) && !(SANTA.dropped || (SANTA.dropped = {}))[id] && GIFTS.length < 14) { SANTA.dropped[id] = true; dropGift(id, k, i); }
+  if (flying) {
+    const R = FH * (desk() ? 1.35 : 1.2), key = k + '|' + W + '|' + Hh;
+    if (SANTA.pk !== key) { SANTA.pk = key; SANTA.R = R; SANTA.path = santaPath(f, R); }
+    const P = SANTA.path;
+    if (P) {
+      const u = (now - f.t0) / FLY_MS;
+      SANTA.k = k; SANTA.on = true; SANTA.f = f; SANTA.u = u; SANTA.R = R; SANTA.s = R * .5 + u * (P.len - R * 2.7);
+      santaTo3D();
+      /* Geschenke fallen hinten aus dem Schlitten */
+      for (let i = 0; i < 4; i++) {
+        const at = .18 + i * .19 + (hh(k, 10 + i) - .5) * .06, id = k * 10 + i;
+        if (u >= at && !GIFTS.some(G => G.id === id) && !(SANTA.dropped || (SANTA.dropped = {}))[id] && GIFTS.length < 14) { SANTA.dropped[id] = true; dropGift(id, k, i); }
+      }
     }
   }
   for (const G of GIFTS) {
@@ -1102,17 +1109,70 @@ function inView(x, g){
   return true;
 }
 function dropGift(id, k, i){
-  const f = SANTA.f, R = SANTA.R, y = SANTA.y + R * .1;
-  /* Landeplatz nur auf freiem Boden, nie auf einem Buchstaben, sicher unterhalb des Schlittens */
-  const x0 = SANTA.x - f.dir * R * .35, gMin = Math.max(top(), y + FH * .5), gMax = fbot() - FH * .1;
-  if (gMin > gMax) return;
+  const R = SANTA.R, P = santaPos(SANTA.s - R * .55), y = SANTA.y;
+  /* Landeplatz gleich hinter dem Schlitten, nur auf freiem, sichtbarem Boden */
   let spot = null;
   for (let t = 0; t < 30 && !spot; t++) {
-    const x = x0 + (t ? (hh(k, 40 + t) - .5) * FH * Math.min(3, t * .4) : 0), g = gMin + hh(k, 20 + i + t * 7) * (gMax - gMin);
-    if (x > FH * .4 && x < W - FH * .4 && idAt(x, g) === -1 && clearAt(-1, x, g, .2) && inView(x, g)) spot = { x, g };
+    const a = hh(k, 40 + t + i * 31) * 6.283, r = t ? FH * (.15 + Math.min(1.4, t * .06)) : 0, x = P.x + Math.cos(a) * r, g = P.g + Math.sin(a) * r * C;
+    if (x > FH * .4 && x < W - FH * .4 && g > top() && g < fbot() && idAt(x, g) === -1 && clearAt(-1, x, g, .2) && inView(x, g)) spot = { x, g };
   }
   if (!spot) return;
-  GIFTS.push({ id, gift: true, x: spot.x, g: spot.g, y, vy: -FH * .4, landY: spot.g, state: 'fall', spin: (hh(k, 30 + i) - .5) * .6 });
+  GIFTS.push({ id, gift: true, x: spot.x, g: spot.g, y: Math.min(y, spot.g - FH * .1), vy: -FH * .6, landY: spot.g, state: 'fall', spin: (hh(k, 30 + i) - .5) * .6 });
+}
+/* Weg am Boden von einem Rand zum andern, mit Abstand zu allen Buchstaben und der Kiste.
+   Raster über den Boden, kürzester Weg, dann gerade gezogen und gerundet. */
+function santaPath(f, R){
+  const cs = FH * .26, g0 = top() + FH * .1, g1 = fbot(), nx = Math.ceil(W / cs) + 1, ny = Math.max(1, Math.floor((g1 - g0) / (cs * C)) + 1);
+  const rc = R * .2 + FH * .1;
+  const freeAt = (x, g) => {
+    if (idAt(x, g) !== -1 || g < g0 - 1 || g > g1 + 1) return false;
+    for (let a = 0; a < 10; a++) { const ca = Math.cos(a * .6283), sa = Math.sin(a * .6283); for (const m of [.5, 1]) if (idAt(x + ca * rc * m, g + sa * rc * m * C) !== -1) return false; }
+    return true;
+  };
+  const X = i => i * cs, G = j => g0 + j * cs * C, n = nx * ny, ok = new Uint8Array(n);
+  /* 1 frei und sichtbar, 2 frei aber hinter einem Buchstaben versteckt (teurer, damit man ihn sieht) */
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) { const x = Math.min(X(i), W), g = G(j); ok[j * nx + i] = freeAt(x, g) ? (inView(x, g) ? 1 : 2) : 0; }
+  /* kürzester Weg (Dijkstra mit kleinem Heap) von Startfeldern mit Anfangskosten zu einem Zielfeld */
+  const route = (starts, isEnd) => {
+    const dist = new Float64Array(n).fill(1e9), prev = new Int32Array(n).fill(-1), heap = [];
+    const push = (d, q) => { heap.push([d, q]); let c = heap.length - 1; while (c) { const p = (c - 1) >> 1; if (heap[p][0] <= heap[c][0]) break; [heap[p], heap[c]] = [heap[c], heap[p]]; c = p; } };
+    const pop = () => { const t = heap[0], l = heap.pop(); if (heap.length) { heap[0] = l; let c = 0; for (;;) { const a = 2 * c + 1, b = a + 1; let m = c; if (a < heap.length && heap[a][0] < heap[m][0]) m = a; if (b < heap.length && heap[b][0] < heap[m][0]) m = b; if (m === c) break; [heap[m], heap[c]] = [heap[c], heap[m]]; c = m; } } return t; };
+    for (const [q, d] of starts) { dist[q] = d; push(d, q); }
+    while (heap.length) {
+      const [d, q] = pop(); if (d > dist[q]) continue;
+      if (isEnd(q)) { const out = []; for (let r = q; r >= 0; r = prev[r]) out.push(r); return out.reverse(); }
+      const i = q % nx, j = (q - i) / nx;
+      for (const [di, dj, c] of [[1, 0, 1], [0, 1, 1], [0, -1, 1], [-1, 0, 1], [1, 1, 1.414], [1, -1, 1.414], [-1, 1, 1.414], [-1, -1, 1.414]]) {
+        const i2 = i + di, j2 = j + dj; if (i2 < 0 || j2 < 0 || i2 >= nx || j2 >= ny) continue;
+        const q2 = j2 * nx + i2; if (!ok[q2]) continue;
+        const d2 = d + c * cs * (ok[q2] === 2 ? 4 : 1); if (d2 < dist[q2]) { dist[q2] = d2; prev[q2] = q; push(d2, q2); }
+      }
+    }
+    return null;
+  };
+  /* Einfahrt auf einer zufälligen Spur, dann durch einen zufälligen freien Punkt mitten zwischen den Buchstaben, dann hinaus */
+  const k = f.k, gIn = g0 + f.row * (g1 - g0), side = (g, d0) => { const o = []; for (let j = 0; j < ny; j++) if (ok[j * nx + d0]) o.push([j * nx + d0, Math.abs(G(j) - g) / C * .8]); return o; };
+  let mid = -1, bd = 1e9; const tx = W * (.32 + hh(k, 8) * .36), tg = g0 + (.15 + hh(k, 9) * .7) * (g1 - g0);
+  for (let q = 0; q < n; q++) if (ok[q] === 1) { const i = q % nx, d = Math.hypot(X(i) - tx, (G((q - i) / nx) - tg) / C); if (d < bd) { bd = d; mid = q; } }
+  const A = mid >= 0 && route(side(gIn, 0), q => q === mid), B = A && route([[mid, 0]], q => q % nx === nx - 1);
+  const cells = A && B ? [...A, ...B.slice(1)] : route(side(gIn, 0), q => q % nx === nx - 1);
+  if (!cells) return null;
+  let pts = cells.map(q => { const i = q % nx; return { x: Math.min(X(i), W), g: G((q - i) / nx) }; });
+  /* gerade ziehen: so weit springen, wie die Strecke frei bleibt */
+  const lineOk = (a, b) => { const L = Math.hypot(b.x - a.x, (b.g - a.g) / C), m = Math.ceil(L / (cs * .4)); for (let t = 1; t < m; t++) if (!freeAt(a.x + (b.x - a.x) * t / m, a.g + (b.g - a.g) * t / m)) return false; return true; };
+  const st = [pts[0]]; for (let a = 0; a < pts.length - 1;) { let b = pts.length - 1; while (b > a + 1 && !lineOk(pts[a], pts[b])) b--; st.push(pts[b]); a = b; }
+  /* von weit draussen rein und wieder raus, dann Ecken runden */
+  pts = [{ x: -R * 3.2, g: st[0].g }, ...st, { x: W + R * 3.2, g: st[st.length - 1].g }];
+  for (let it = 0; it < 3; it++) { const o = [pts[0]]; for (let a = 0; a < pts.length - 1; a++) { const p = pts[a], q = pts[a + 1]; o.push({ x: p.x * .75 + q.x * .25, g: p.g * .75 + q.g * .25 }, { x: p.x * .25 + q.x * .75, g: p.g * .25 + q.g * .75 }); } o.push(pts[pts.length - 1]); pts = o; }
+  if (f.dir < 0) pts.reverse();
+  const cum = [0]; for (let a = 1; a < pts.length; a++) cum.push(cum[a - 1] + Math.hypot(pts[a].x - pts[a - 1].x, (pts[a].g - pts[a - 1].g) / C));
+  return { pts, cum, len: cum[cum.length - 1] };
+}
+/* Punkt auf dem Weg nach Strecke s, mit geglätteter Fahrtrichtung */
+function santaPos(s){
+  const P = SANTA.path, at = s2 => { s2 = Math.max(0, Math.min(P.len, s2)); let a = 1; while (a < P.cum.length - 1 && P.cum[a] < s2) a++; const t = (s2 - P.cum[a - 1]) / ((P.cum[a] - P.cum[a - 1]) || 1), p = P.pts[a - 1], q = P.pts[a]; return { x: p.x + (q.x - p.x) * t, g: p.g + (q.g - p.g) * t }; };
+  const c = at(s), h = SANTA.R * .3, b = at(s - h), e = at(s + h);
+  return { x: c.x, g: c.g, a: Math.atan2((e.g - b.g) / C, e.x - b.x) };
 }
 /* Santa zu Fuss: kommt vom Rand, sammelt jedes Geschenk einzeln auf und geht wieder */
 function spawnWalker(k){
@@ -1125,15 +1185,19 @@ function spawnWalker(k){
 }
 function walkerThink(F, dt){
   if (F.leave || F.drag) return;
-  F.age = (F.age || 0) + dt; if (F.age > 45) { F.leave = true; F.fetch = null; return; }
+  F.age = (F.age || 0) + dt; if (F.age > 22) { F.leave = true; F.fetch = null; return; }
   if (F.enter > 0 || F.fetch || F.pickUp) return;
   let best = null, bd = 1e9; for (const G of GIFTS) if (G.state === 'rest' && !G.popped && !(F.skipPoop && F.skipPoop.has(G))) { const d = Math.hypot(G.x - F.x, (G.g - F.g) / C); if (d < bd) { bd = d; best = G; } }
   if (best) { F.fetch = best; F.fetchT = 0; F.goal = null; F.goalStage = 0; F.pause = 0; } else F.leave = true;
 }
 function santaTo3D(){
-  const S2 = SANTA, R = S2.R, a = S2.f.dir > 0 ? 0 : Math.PI, fw = v3(Math.cos(a), Math.sin(a), 0), rt = v3(-Math.sin(a), Math.cos(a), 0), up = v3(0, 0, 1);
-  const L = (f, r, z) => add(add(mul(fw, f * R), mul(rt, r * R)), mul(up, z * R));
-  const w = p => toW({ x: S2.x, g: S2.g }, { z: S2.z }, p), q = new THREE.Quaternion().setFromAxisAngle(_y, -a);
+  const S2 = SANTA, R = S2.R, up = v3(0, 0, 1);
+  /* jedes Teil (Schlitten, Rentiere) sitzt auf seinem eigenen Punkt des Wegs, wie ein kleiner Zug */
+  const frame = (s, f0) => { const P = santaPos(s), fw = v3(Math.cos(P.a), Math.sin(P.a), 0), rt = v3(-Math.sin(P.a), Math.cos(P.a), 0);
+    return { L: (f, r, z) => toW(P, { z: 0 }, add(add(mul(fw, (f - f0) * R), mul(rt, r * R)), mul(up, z * R))), q: new THREE.Quaternion().setFromAxisAngle(_y, -P.a) }; };
+  const scr = v => [v.x + W / 2, Hh / 2 + v.z * C - v.y * HZ];
+  const Fs0 = frame(S2.s, 0), Ls = Fs0.L, w = p => p;
+  let L = Ls, q = Fs0.q;
   const K = GL.parts.k, Pk = GL.parts.p, cy = (A, B, r) => addCyl(K, w(L(...A)), w(L(...B)), r * R), line = (pts, r) => { for (let i = 1; i < pts.length; i++) cy(pts[i - 1], pts[i], r); };
   const t = srvNow() / 1000;
   /* Schlitten: Kufen, Streben, Kasten */
@@ -1162,8 +1226,9 @@ function santaTo3D(){
     line([sh, el, hd], .026); addSph(K, w(L(...el)), .028 * R); addSph(K, w(L(...hd)), .026 * R);
   }
   /* zwei Rentiere im Galopp mit Geweih, an Leinen */
-  const ph = t * 9;
+  const ph = t * 9, deer = [];
   for (const [f0, o] of [[.95, 0], [1.55, 1.3]]) {
+    const Fr = frame(S2.s + f0 * R, f0); L = Fr.L; q = Fr.q; deer.push(Fr);
     const b = .3 + Math.sin(ph + o) * .015;
     addEll(K, w(L(f0, 0, b)), q, .2 * R, .07 * R, .075 * R);
     const nk = [f0 + .25, 0, b + .17];
@@ -1179,12 +1244,13 @@ function santaTo3D(){
     cy([f0 - .2, 0, b + .03], [f0 - .27, 0, b + .09], .016);
   }
   /* Leinen von den Händen und der Deichsel */
-  for (const sd of [1, -1]) cy([.09, sd * .07, .4], [.98, sd * .05, .38], .006);
-  cy([.42, 0, .18], [.76, 0, .3], .012); cy([1.15, 0, .32], [1.36, 0, .3], .012);
+  const [D1, D2] = deer;
+  for (const sd of [1, -1]) addCyl(K, Ls(.09, sd * .07, .4), D1.L(.98, sd * .05, .38), .006 * R);
+  addCyl(K, Ls(.42, 0, .18), D1.L(.76, 0, .3), .012 * R); addCyl(K, D1.L(1.15, 0, .32), D2.L(1.36, 0, .3), .012 * R);
   /* Trefferfläche und Mitte für das Zerplatzen */
-  const xs = [-.5, 2.1].map(f => S2.x + fw.x * f * R), yTop = sy(S2.g, 0, S2.z + R * .85), yBot = sy(S2.g, 0, S2.z - R * .05);
-  S2.y = sy(S2.g, 0, S2.z + R * .35);
-  S2.box = { x0: Math.min(...xs) - R * .15, x1: Math.max(...xs) + R * .15, y0: yTop - R * .15, y1: yBot + R * .15 };
+  const pts = [Ls(-.5, 0, 0), Ls(-.4, 0, .8), Ls(.45, 0, 0), D1.L(.95, 0, .7), D1.L(1.2, 0, 0), D2.L(1.55, 0, .7), D2.L(1.8, 0, 0)].map(scr);
+  S2.y = scr(Ls(-.3, 0, .45))[1];
+  S2.box = { x0: Math.min(...pts.map(p => p[0])) - R * .15, x1: Math.max(...pts.map(p => p[0])) + R * .15, y0: Math.min(...pts.map(p => p[1])) - R * .15, y1: Math.max(...pts.map(p => p[1])) + R * .1 };
 }
 /* Geschenk antippen: die Infos öffnen sich */
 const onGift = (x, y) => { const s = FH * .2; return GIFTS.some(G => !G.popped && Math.abs(x - G.x) < s * 1.3 && Math.abs(y - (G.y - s * .9)) < s * 1.4); };
