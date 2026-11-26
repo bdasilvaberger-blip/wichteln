@@ -262,6 +262,9 @@ function initGL(){
   GL.matPinkO = new THREE.ShaderMaterial({ vertexShader: GL.mat[0].vertexShader, fragmentShader: GL.mat[0].fragmentShader, uniforms: { uId: { value: 7 } }, side: THREE.DoubleSide });
   GL.matW = new THREE.ShaderMaterial({ vertexShader: GL.mat[0].vertexShader, fragmentShader: GL.mat[0].fragmentShader, uniforms: { uId: { value: 6 } }, side: THREE.DoubleSide });
   GL.wbox = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), GL.matW, 6); GL.wbox.frustumCulled = false; GL.wbox.count = 0; GL.scene.add(GL.wbox);
+  /* Santas Geschenke als kleine pinke 3D Päckchen mit Deckel und Masche */
+  GL.gbox = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), GL.matPinkO, 64); GL.gbow = new THREE.InstancedMesh(new THREE.TorusGeometry(1, .32, 8, 18), GL.matPinkO, 64);
+  for (const m of [GL.gbox, GL.gbow]) { m.frustumCulled = false; m.count = 0; GL.scene.add(m); }
   /* Filter: Kanten aus Normalen, Tiefe und Farbkennung */
   GL.post = new THREE.Scene(); GL.pcam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   GL.pmat = new THREE.ShaderMaterial({
@@ -1185,9 +1188,22 @@ function popSanta(){
   GIFTS.forEach((G, i) => POPS.push({ x: G.x, y: G.y - FH * .12, r: FH * .22, t: -.12 - i * .07, gift: G }));
   return true;
 }
-function drawGifts(c){
-  const s = FH * .2;
-  for (const G of GIFTS) { if (G.popped) continue; c.save(); c.translate(G.x, G.y - s * .9); if (G.state === 'fall') c.rotate(G.spin * Math.sin(G.y * .02)); drawGift(c, 0, 0, s); c.restore(); }
+function giftsTo3D(){
+  const s = FH * .25, q = new THREE.Quaternion(), e = new THREE.Euler(), add1 = (M, pos, sc) => { _s.set(sc[0], sc[1], sc[2]); _m.compose(pos, q, _s); M.setMatrixAt(M.count++, _m); };
+  for (const G of GIFTS) {
+    if (G.popped || G.gone) continue;
+    /* Höhe über dem Landeplatz aus der Bildschirmhöhe; beim Fallen taumelt es */
+    const z = Math.max(0, (G.landY - G.y) / HZ), tumble = G.state === 'fall' ? Math.sin(G.y * .03) * G.spin * 1.6 : 0;
+    G.yaw = G.yaw ?? G.spin * 3;
+    e.set(tumble, G.yaw, tumble * .6); q.setFromEuler(e);
+    const base = new THREE.Vector3(G.x - W / 2, z, (G.g - Hh / 2) / C), up = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
+    add1(GL.gbox, base.clone().addScaledVector(up, s * .4), [s, s * .8, s]);
+    add1(GL.gbox, base.clone().addScaledVector(up, s * .87), [s * 1.12, s * .2, s * 1.12]);
+    const bq = q.clone(); for (const sd of [1, -1]) { const loop = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, sd * .5)); q.copy(bq).multiply(loop);
+      add1(GL.gbow, base.clone().addScaledVector(up, s * 1.08).add(new THREE.Vector3(sd * s * .17, 0, 0).applyQuaternion(bq)), [s * .15, s * .12, s * .15]); }
+    q.copy(bq);
+  }
+  for (const M of [GL.gbox, GL.gbow]) M.instanceMatrix.needsUpdate = true;
 }
 /* Seifenblase: dünner Ring, der aufgeht und verblasst, dazu kleine Spritzer */
 function drawPops(c, dt){
@@ -1623,7 +1639,7 @@ function step(F, dt){
 }
 function render(dt){
   for (const k in GL.parts) { GL.parts[k].nc = 0; GL.parts[k].ns = 0; }
-  GL.wbox.count = 0;
+  GL.wbox.count = 0; GL.gbox.count = 0; GL.gbow.count = 0;
   dogStep(dt); catStep(dt); dogTo3D(); catTo3D(); poopTo3D(); assignPoops(); santaStep(dt); boxStep(dt); managePushers();
   const c = ctx;
   c.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -1642,7 +1658,7 @@ function render(dt){
     figTo3D(F, J, base);
   }
   /* wer den Platz verlassen hat, verschwindet */
-  ropeTo3D();
+  ropeTo3D(); giftsTo3D();
   for (let i = Fs.length - 1; i >= 0; i--) { const F = Fs[i]; if (F.leave && (F.x < -FH * .8 || F.x > W + FH * .8 || (F.surf >= 0 && !F.spot && !F.act))) Fs.splice(i, 1); }
   for (const k in GL.parts) { const P = GL.parts[k]; P.c.count = P.nc; P.sp.count = P.ns; P.c.instanceMatrix.needsUpdate = P.sp.instanceMatrix.needsUpdate = true; }
   /* erst Buchstaben allein (für die Konturen), dann alles (für die Figuren mit Verdeckung) */
@@ -1677,7 +1693,7 @@ function render(dt){
     c.beginPath(); c.arc(p.x, p.y, (1.2 + q * (5 + p.big * 4)) * us, 0, 7);
     c.lineWidth = Math.max(.3, 1.2 * (1 - q)); c.strokeStyle = `rgba(0,0,0,${(1 - q) * .85})`; c.stroke();
   }
-  drawGifts(c); drawPops(c, dt);
+  drawPops(c, dt);
   c.textAlign = 'center'; c.textBaseline = 'bottom';
   for (const F of Fs) {
     const b = F.box; if (!b || F.flyHide) continue;
@@ -1975,9 +1991,75 @@ $('boxNote').addEventListener('click', e => { if (performance.now() - faqAt < 50
 $('notice').addEventListener('close', () => { if (view === 'name') setTimeout(() => $('nameIn').focus(), 50); });
 /* Tipp neben das Fenster schliesst es; der Tipp, der es geöffnet hat, zählt nicht */
 let faqAt = 0;
-function openFaq(){ if ($('faq').open) return; faqAt = performance.now(); $('faq').showModal(); }
+/* ---------- Pip, der Sekretär des Admins: ein kleiner Elf im Infofenster ---------- */
+const ELF = { F: null, t: 0, gest: 'wave', in: 1 };
+function drawElf(){
+  const cvs = $('elfC'), r = cvs.getBoundingClientRect(); if (!r.width) return;
+  const d = Math.min(2, Math.round(devicePixelRatio || 1)) || 1;
+  if (cvs.width !== Math.round(r.width * d)) { cvs.width = Math.round(r.width * d); cvs.height = Math.round(r.height * d); }
+  const c = cvs.getContext('2d'); c.setTransform(d, 0, 0, d, 0, 0); c.clearRect(0, 0, r.width, r.height);
+  if (!ELF.F) { ELF.F = makeFig(0); ELF.F.i = -2; ELF.F.look = { h: .9, build: .1 }; ELF.F.a = Math.PI / 2 - .25; }
+  const F = ELF.F, keep = FH, fh = r.height / 1.55; FH = fh;
+  const P = walkPose(F, { stride: 0 }), t = ELF.t, w = Math.sin(t * 9);
+  P.pelvis.z += Math.sin(t * 2.2) * .004;
+  if (ELF.gest === 'wave') { P.handR = { r: -.3, f: .1, z: 1.02 + w * .04 }; P.armsUp = true; }
+  if (ELF.gest === 'psst') { P.handR = { r: -.02, f: .12, z: .76 }; }
+  if (ELF.gest === 'point') { P.handR = { r: -.34, f: .3, z: .74 + Math.sin(t * 5) * .015 }; }
+  if (ELF.gest === 'watch') { P.handR = { r: .02, f: .2, z: .62 }; F.a = Math.PI / 2 - .25 + Math.sin(t * 2) * .05; }
+  if (ELF.gest === 'look') { P.handR = { r: -.06, f: .13, z: 1.02 }; P.yaw = Math.sin(t * 1.6) * .35; }
+  if (ELF.gest === 'tap') { P.handR = { r: .12, f: .18, z: .46 + Math.abs(Math.sin(t * 7)) * .05 }; }
+  P.handL = { r: .2, f: .1, z: .42 };
+  const J = solveFig(F, P), rise = RM ? 0 : (1 - ez(cl(ELF.in / .45))) * r.height * .9, base = { x: r.width * .52, gy: r.height * .9 + rise, z: 0 };
+  drawFig(c, F, J, base);
+  const P2 = p => [base.x + p.x, sy(base.gy, p.y, p.z + base.z)], h = P2(J.headC), hr = .1 * fh * J.k;
+  /* Ohren, spitz */
+  c.fillStyle = INK; for (const sd of [-1, 1]) { c.beginPath(); c.moveTo(h[0] + sd * hr * .8, h[1] - hr * .2); c.lineTo(h[0] + sd * hr * 1.75, h[1] - hr * .75); c.lineTo(h[0] + sd * hr * .7, h[1] + hr * .35); c.fill(); }
+  /* Zipfelmütze in Pink mit Bommel */
+  c.fillStyle = PINK; c.strokeStyle = INK; c.lineWidth = 1.4; c.lineJoin = 'round';
+  c.beginPath(); c.moveTo(h[0] - hr * 1.05, h[1] - hr * .45); c.quadraticCurveTo(h[0] - hr * .2, h[1] - hr * 2.9, h[0] + hr * 1.9, h[1] - hr * 2.2 + Math.sin(t * 3) * hr * .15); c.quadraticCurveTo(h[0] + hr * .6, h[1] - hr * 1.6, h[0] + hr * 1.05, h[1] - hr * .45); c.closePath(); c.fill(); c.stroke();
+  c.beginPath(); c.arc(h[0] + hr * 1.95, h[1] - hr * 2.2 + Math.sin(t * 3) * hr * .15, hr * .38, 0, 7); c.fill(); c.stroke();
+  /* Klemmbrett unter dem Arm */
+  const hl = P2(J.handL); c.save(); c.translate(hl[0] + fh * .02, hl[1] - fh * .1); c.rotate(.18);
+  c.fillStyle = '#fff'; c.lineWidth = 1.6; c.beginPath(); c.rect(-fh * .1, -fh * .13, fh * .2, fh * .26); c.fill(); c.stroke();
+  c.fillStyle = INK; c.fillRect(-fh * .045, -fh * .155, fh * .09, fh * .04);
+  c.lineWidth = 1; for (let i = 0; i < 3; i++) { c.beginPath(); c.moveTo(-fh * .06, -fh * .05 + i * fh * .055); c.lineTo(fh * .06, -fh * .05 + i * fh * .055); c.stroke(); }
+  c.restore();
+  FH = keep;
+}
+/* Pip erklärt: Zeile für Zeile, mit einer Geste und einem Satz */
+const PIP = [
+  [null, 'wave', "Hi, I'm Pip, the admin's secretary. Here is everything you need."],
+  [0, 'point', 'Mark your calendar: Saturday, December 26th.'],
+  [1, 'watch', "We start at 20:00. Don't be late."],
+  [2, 'look', 'Somewhere in Zurich. The exact spot follows.'],
+  [3, 'tap', 'Sign up until December 1st, 12:00.'],
+  [4, 'point', 'Then tap the gift box to see who you are gifting.'],
+  [5, 'psst', 'Psst. Your code is just for you. Keep it safe.'],
+  [null, 'wave', "That's all. Have fun!"]
+];
+let pipRaf = 0;
+function openFaq(){
+  if ($('faq').open) return; faqAt = performance.now();
+  const rows = [...$('faq').querySelectorAll('dl > div')], steps = PIP.filter(p => p[0] == null || !rows[p[0]].hidden);
+  rows.forEach(r0 => r0.classList.toggle('pend', !RM));
+  ELF.t = 0; ELF.in = 0; let k = -1, next = 0, last = performance.now();
+  const show = i => { k = i; const [row, g, txt] = steps[i]; ELF.gest = g; $('elfSay').textContent = txt; if (row != null) rows[row].classList.remove('pend'); };
+  const skip = () => { rows.forEach(r0 => r0.classList.remove('pend')); show(steps.length - 1); next = Infinity; };
+  ELF.skip = skip;
+  if (RM) { show(steps.length - 1); rows.forEach(r0 => r0.classList.remove('pend')); }
+  $('faq').showModal();
+  const tick = now => {
+    if (!$('faq').open) return;
+    const dt = Math.min(.05, (now - last) / 1000); last = now; ELF.t += dt; ELF.in += dt;
+    if (!RM && ELF.t >= next && k < steps.length - 1) { show(k + 1); next = ELF.t + (k === 0 ? 2.2 : 1.7); }
+    drawElf(); pipRaf = requestAnimationFrame(tick);
+  };
+  cancelAnimationFrame(pipRaf); pipRaf = requestAnimationFrame(tick);
+}
 $('faq').addEventListener('click', e => {
   if (performance.now() - faqAt < 500) return;
+  /* Tipp ins Fenster: alles auf einmal zeigen */
+  if (e.target.closest('dl, .elf') && ELF.skip) ELF.skip();
   const r = $('faq').getBoundingClientRect();
   if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) $('faq').close();
 });

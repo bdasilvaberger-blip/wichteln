@@ -41,6 +41,17 @@ body{background:var(--w);color:var(--k);font:400 16px/1.5 "Jost","Futura","Centu
 #boxNote p{margin-bottom:22px}
 @media(min-width:1024px){#notice h2{font-size:26px}#notice p{font-size:17px}}
 #faq h2{margin:0 0 16px;font-weight:500;font-size:22px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+#faq .elf{display:grid;grid-template-columns:96px 1fr;gap:10px;align-items:end;margin:-6px 0 18px}
+#elfC{width:92px;height:132px;justify-self:center}
+#myCode{color:var(--p);font-weight:500;letter-spacing:.06em}
+#faq dl div{transition:opacity .45s var(--ease),transform .45s var(--ease)}
+#faq dl div.pend{opacity:0;transform:translateY(6px)}
+#faq .bubble{position:relative;margin:0 0 62px;padding:11px 14px;border:1.5px solid var(--k);border-radius:16px;font-size:15px;line-height:1.35;background:var(--w)}
+#faq .bubble::before,#faq .bubble::after{content:"";position:absolute;bottom:18px;width:0;height:0;border-style:solid}
+#faq .bubble::before{left:-12px;border-width:9px 12px 9px 0;border-color:transparent var(--k) transparent transparent}
+#faq .bubble::after{left:-9.6px;bottom:19.6px;border-width:7.4px 10px 7.4px 0;border-color:transparent var(--w) transparent transparent}
+@media(min-width:1024px){#faq{max-width:440px}#elfC{width:96px;height:144px}#faq .bubble{font-size:16px}}
 #faq dl{margin:0 0 20px;display:grid;gap:12px}
 #faq dl div{display:grid;grid-template-columns:96px 1fr;gap:10px;align-items:baseline}
 #faq dt{color:var(--mid);font-size:14px}
@@ -159,13 +170,14 @@ button.pill.pink{background:var(--p);border-color:var(--p);color:var(--k)}
 </dialog>
 <button id="info" type="button" aria-label="About Wichteln 2026" aria-haspopup="dialog"></button>
 <dialog id="faq" aria-labelledby="faqT">
-  <h2 id="faqT">Wichteln 2026</h2>
+  <h2 id="faqT" class="sr">Wichteln 2026</h2>
+  <div class="elf"><canvas id="elfC" aria-hidden="true"></canvas><p class="bubble" id="elfSay">Hi, I'm Pip, the admin's secretary. Here is everything you need.</p></div>
   <dl>
     <div><dt>Date</dt><dd>Saturday, December 26th, 2026</dd></div>
     <div><dt>Time</dt><dd>From 20:00</dd></div>
     <div><dt>Place</dt><dd>Zurich. Exact location to follow.</dd></div>
     <div><dt>Sign up</dt><dd>Until December 1st, 12:00</dd></div>
-    <div><dt>Draw</dt><dd>Once registration closes, tap Draw to see who your gift goes to. Keep it to yourself.</dd></div>
+    <div><dt>Draw</dt><dd>Once registration closes, tap the gift box to see who your gift goes to. Keep it to yourself.</dd></div>
     <div id="myCodeRow" hidden><dt>Your code</dt><dd id="myCode"></dd></div>
   </dl>
   <button class="pill" type="button" id="faqClose">Close</button>
