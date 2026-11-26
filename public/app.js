@@ -312,12 +312,16 @@ function sizeGL(){
   GL.rt.depthTexture = new THREE.DepthTexture(w, h); GL.rt.depthTexture.type = THREE.UnsignedIntType;
   Object.assign(GL.cam, { left: -W / 2, right: W / 2, top: Hh / 2, bottom: -Hh / 2 }); GL.cam.updateProjectionMatrix();
   GL.pmat.uniforms.tN.value = GL.rt.texture; GL.pmat.uniforms.tI.value = GL.rtI.texture; GL.pmat.uniforms.tD.value = GL.rt.depthTexture;
-  GL.pmat.uniforms.uRes.value.set(w, h); GL.pmat.uniforms.uR.value = (mobile() ? 1.05 : desk() ? 1.45 : 1.25) * d;
+  GL.pmat.uniforms.uRes.value.set(w, h); GL.pmat.uniforms.uR.value = (mobile() ? .8 : desk() ? 1.45 : 1.25) * d;
+  STROKE = mobile() ? .78 : 1;
   GL.pmat.uniforms.uDT.value = 6 / 12000;
 }
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _v = new THREE.Vector3(), _s = new THREE.Vector3(), _y = new THREE.Vector3(0, 1, 0), _d = new THREE.Vector3();
 const toW = (F, base, p) => new THREE.Vector3(F.x - W / 2 + p.x, base.z + p.z, (F.g - Hh / 2) / C + p.y);
+/* auf dem Handy etwas feinere Striche, damit jeder einzelne lesbar bleibt */
+let STROKE = 1;
 function addCyl(P, a, b, r){
+  r *= STROKE;
   _d.subVectors(b, a); const l = _d.length(); if (l < .01) return;
   _q.setFromUnitVectors(_y, _d.multiplyScalar(1 / l)); _v.addVectors(a, b).multiplyScalar(.5); _s.set(r, l, r);
   _m.compose(_v, _q, _s); P.c.setMatrixAt(P.nc++, _m);
@@ -333,9 +337,9 @@ function figTo3D(F, J, base){
   for (const s of ['L', 'R']) {
     addCyl(P, j['hip' + s], j['knee' + s], r); addCyl(P, j['knee' + s], j['ank' + s], r); addCyl(P, j['ank' + s], j['toe' + s], r * .9);
     addCyl(P, j['sh' + s], j['elb' + s], r * .92); addCyl(P, j['elb' + s], j['hand' + s], r * .92);
-    for (const q of ['hip', 'knee', 'ank', 'toe', 'sh', 'elb', 'hand']) addSph(P, j[q + s], r * (q === 'toe' ? .9 : 1));
+    for (const q of ['hip', 'knee', 'ank', 'toe', 'sh', 'elb', 'hand']) addSph(P, j[q + s], r * STROKE * (q === 'toe' ? .9 : 1));
   }
-  addSph(P, j.pel, r * 1.15); addSph(P, j.neck, r * 1.15);
+  addSph(P, j.pel, r * STROKE * 1.15); addSph(P, j.neck, r * STROKE * 1.15);
   addSph(P, j.headC, .1 * R * J.k);
   if (F.santa) {
     /* Bauch, Zipfelmütze, Sack auf dem Rücken */
