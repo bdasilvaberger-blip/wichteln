@@ -722,7 +722,7 @@ function dogStep(dt){
     const F = D.mode === 'visit' ? (dist(D.vF) < FH * .62 && Math.abs(D.vF.g - D.g) / C < FH * .2 ? D.vF : null) : Fs.find(F => petOk(F) && !F.goal && dist(F) < FH * .62 && Math.abs(F.x - D.x) > FH * .35 && Math.abs(F.g - D.g) / C < FH * .2);
     if (F) { D.vF = null; const dur = 2.4 + Math.random() * 1.6; F.pet = { t: 0, dur }; F.goal = null; F.goalStage = 0; D.mode = 'pet'; D.t = dur; D.petF = F; }
   }
-  if (D.t <= 0 && D.mode !== 'stay') {
+  if (D.t <= 0 && D.mode !== 'stay' && D.mode !== 'chase') {
     const r = Math.random();
     if (D.mode !== 'poop' && clock - D.lastPoop > 25 && POOPS.length < 2 && r < .3) { D.mode = 'poop'; D.t = 2.6; }
     else if (D.mode === 'walk' && r < .5 && clock - (D.lastVisit || -30) > 14) {
@@ -738,11 +738,13 @@ function dogStep(dt){
   const out = D.x < FH || D.x > W - FH || D.g < top() || D.g > fbot();
   /* Mellow läuft der Figur entgegen, damit sich beide rechtzeitig treffen */
   const pd = D.mode === 'stay' && D.petF ? Math.hypot(D.petF.x - D.x, (D.petF.g - D.g) / C) / FH : 0, far = pd > .9;
-  if (D.mode === 'walk' || D.mode === 'visit' || (D.mode === 'stay' && (out || far))) {
+  if (D.mode === 'chase' && !CAT) { D.mode = 'walk'; D.t = 2; }
+  if (D.mode === 'walk' || D.mode === 'visit' || D.mode === 'chase' || (D.mode === 'stay' && (out || far))) {
     want = D.mode === 'visit' ? .65 : D.mode === 'stay' ? (out ? 1 : cl((pd - .5) / 2 / Math.max(.3, PET_RUN - (D.petF.trick ? D.petF.trick.t : 0)) * 1.25, .4, 6)) : .5;
     /* beim Besuch seitlich neben die Figur, damit man das Streicheln sieht */
     const vx = D.mode === 'visit' ? D.vF.x + D.vS * FH * .5 : 0, vg = D.mode === 'visit' ? D.vF.g : 0, vd = D.mode === 'visit' ? Math.hypot(vx - D.x, (vg - D.g) / C) : 0;
-    let desired = D.mode === 'stay' ? (out ? Math.atan2((Hh / 2 - D.g) / C, W / 2 - D.x) : Math.atan2((D.petF.g - D.g) / C, D.petF.x - D.x)) : D.mode === 'visit' ? (vd < FH * .12 ? Math.atan2(0, -D.vS) : Math.atan2((vg - D.g) / C, vx - D.x)) : D.a + (Math.sin(clock * .7 + 1) * 1.2 + Math.sin(clock * 1.9) * .6) * dt;
+    if (D.mode === 'chase') want = 1.9;
+    let desired = D.mode === 'chase' ? Math.atan2((CAT.g - D.g) / C, CAT.x - D.x) : D.mode === 'stay' ? (out ? Math.atan2((Hh / 2 - D.g) / C, W / 2 - D.x) : Math.atan2((D.petF.g - D.g) / C, D.petF.x - D.x)) : D.mode === 'visit' ? (vd < FH * .12 ? Math.atan2(0, -D.vS) : Math.atan2((vg - D.g) / C, vx - D.x)) : D.a + (Math.sin(clock * .7 + 1) * 1.2 + Math.sin(clock * 1.9) * .6) * dt;
     if (D.mode === 'visit') want = cl(vd / (FH * .4)) * .65;
     if (D.x < FH || D.x > W - FH || D.g < top() || D.g > fbot()) desired = Math.atan2((Hh / 2 - D.g) / C, W / 2 - D.x);
     for (const F of Fs) { if (F.surf >= 0 || F.drag || F === D.vF) continue; const dx = F.x - D.x, dg = (F.g - D.g) / C, d = Math.hypot(dx, dg);
@@ -761,6 +763,52 @@ function dogStep(dt){
   if (D.mode === 'poop' && D.t < 1.2 && !D.dropped) { D.dropped = true; D.lastPoop = clock;
     POOPS.push({ x: D.x - Math.cos(D.a) * FH * .32, g: D.g - Math.sin(D.a) * FH * .32 * C, born: clock, who: null }); }
   if (D.mode !== 'poop') D.dropped = false;
+}
+/* ---------- Katze: taucht auf, wenn jemand online kommt; Mellow jagt sie ein paar Sekunden ---------- */
+let CAT = null, catAt = -1e9;
+function spawnCat(){
+  const D = DOG; if (!D || CAT || (view !== 'pick' && view !== 'lobby') || clock - catAt < 25 || !['walk', 'sniff', 'visit'].includes(D.mode)) return;
+  let spot = null;
+  for (let t = 0; t < 60 && !spot; t++) { const a = Math.random() * 6.283, r = FH * (2.5 + Math.random() * 2.5), x = D.x + Math.cos(a) * r, g = D.g + Math.sin(a) * r * C;
+    if (x > FH && x < W - FH && g > top() && g < fbot() && clearAt(-1, x, g, .3)) spot = { x, g }; }
+  if (!spot) return;
+  catAt = clock;
+  CAT = { ...spot, a: Math.atan2((spot.g - D.g) / C, spot.x - D.x), sp: 0, ph: 0, t: 0, life: 5.2 };
+  POPS.push({ x: spot.x, y: spot.g - FH * .2, r: FH * .3, t: 0 });
+  if (D.vF) D.vF = null; D.mode = 'chase'; D.t = CAT.life + .5;
+}
+function catStep(dt){
+  const K = CAT; if (!K) return;
+  K.t += dt; K.ph += dt * (4 + K.sp * 16);
+  const D = DOG;
+  if (K.t > K.life || !D) { POPS.push({ x: K.x, y: K.g - FH * .2, r: FH * .3, t: 0 }); CAT = null; if (D && D.mode === 'chase') { D.mode = 'sniff'; D.t = 1.5; } return; }
+  /* weg vom Hund, Hindernissen ausweichen, im Bild bleiben */
+  const free = a2 => { for (const L of [.15, .3, .5]) if (!clearAt(-1, K.x + Math.cos(a2) * L * FH, K.g + Math.sin(a2) * L * FH * C, .2)) return false; return true; };
+  let desired = Math.atan2((K.g - D.g) / C, K.x - D.x) + Math.sin(K.t * 2.3) * .6;
+  const edge = K.x < FH * 1.2 || K.x > W - FH * 1.2 || K.g < top() + FH * .3 || K.g > fbot() - FH * .3;
+  if (edge) desired = Math.atan2((Hh / 2 - K.g) / C, W / 2 - K.x) + Math.sin(K.t * 3) * .9;
+  let pick = null; for (const da of [0, .4, -.4, .8, -.8, 1.3, -1.3, 1.9, -1.9, 2.6, -2.6]) if (free(desired + da)) { pick = desired + da; break; }
+  if (pick !== null) { let d = pick - K.a; d = Math.atan2(Math.sin(d), Math.cos(d)); K.a += Math.sign(d) * Math.min(Math.abs(d), 7 * dt); }
+  K.sp = lerp(K.sp, pick === null ? 0 : 2.3, Math.min(1, dt * 6));
+  const nx = K.x + Math.cos(K.a) * K.sp * FH * dt, ng = K.g + Math.sin(K.a) * K.sp * FH * dt * C;
+  if (clearAt(-1, nx, ng, .12)) { K.x = nx; K.g = ng; }
+}
+function catTo3D(){
+  const K = CAT; if (!K) return;
+  const R = FH * 1.15, fw = v3(Math.cos(K.a), Math.sin(K.a), 0), rt = v3(-Math.sin(K.a), Math.cos(K.a), 0), up = v3(0, 0, 1);
+  const L = (f, r, z) => add(add(mul(fw, f * R), mul(rt, r * R)), mul(up, z * R));
+  const w = p => toW({ x: K.x, g: K.g }, { z: 0 }, p), q = new THREE.Quaternion().setFromAxisAngle(_y, -K.a), P = GL.parts.k;
+  const bz = .2 + Math.sin(K.ph * 2) * .012, st = Math.sin(K.ph * .5) * .05;
+  addEll(P, w(L(0, 0, bz)), q, .17 * R, .055 * R, .06 * R);
+  const head = L(.19, 0, bz + .08); addSph(P, w(head), .055 * R);
+  for (const sd of [1, -1]) addCyl(P, w(add(head, L(.0, sd * .03, .03))), w(add(head, L(-.01, sd * .035, .085))), .014 * R);
+  for (const [f, r, off] of [[.11, .04, 0], [.11, -.04, Math.PI], [-.11, .04, Math.PI], [-.11, -.04, 0]]) {
+    const sw = Math.sin(K.ph + off) * .07 * cl(K.sp / 1.2);
+    addCyl(P, w(L(f, r, bz - .02)), w(L(f + sw, r, Math.max(0, Math.cos(K.ph + off)) * .025)), .018 * R);
+  }
+  /* Schwanz: hoch geschwungen */
+  const t1 = L(-.16, 0, bz + .02), t2 = L(-.26, st, bz + .12), t3 = L(-.24, st * 1.5, bz + .24);
+  addCyl(P, w(t1), w(t2), .016 * R); addCyl(P, w(t2), w(t3), .014 * R);
 }
 function addEll(P, c, q, sx, sy, sz){ _s.set(sx, sy, sz); _m.compose(c, q, _s); P.sp.setMatrixAt(P.ns++, _m); }
 function dogTo3D(){
@@ -1576,7 +1624,7 @@ function step(F, dt){
 function render(dt){
   for (const k in GL.parts) { GL.parts[k].nc = 0; GL.parts[k].ns = 0; }
   GL.wbox.count = 0;
-  dogStep(dt); dogTo3D(); poopTo3D(); assignPoops(); santaStep(dt); boxStep(dt); managePushers();
+  dogStep(dt); catStep(dt); dogTo3D(); catTo3D(); poopTo3D(); assignPoops(); santaStep(dt); boxStep(dt); managePushers();
   const c = ctx;
   c.setTransform(DPR, 0, 0, DPR, 0, 0);
   c.clearRect(0, 0, W, Hh);
@@ -1788,9 +1836,8 @@ function dogPoop(){
   if (D.petF) D.petF.pet = null; D.mode = 'poop'; D.t = 2.6; D.dropped = false; return true;
 }
 function tapDog(){
-  const now = performance.now();
-  if (now - dogTapAt < 450) { dogTapAt = 0; if (dogPoop()) rtSend({ t: 'poop' }); }
-  else dogTapAt = now;
+  const now = performance.now(); if (now - dogTapAt < 300) return; dogTapAt = now;
+  if (dogPoop()) rtSend({ t: 'poop' });
 }
 /* Info Zeichen getroffen? Grosszügig um die Form herum, damit es auch mit dem Finger klappt */
 function onInfo(x, y){
@@ -1991,7 +2038,7 @@ function onRt(m){
   if (!d || typeof d !== 'object') return;
   /* nur angemeldete Figuren dürfen ihre eigene Figur bewegen; alles andere wird ignoriert */
   const from = typeof m.clientId === 'string' && /^f\d{1,2}$/.test(m.clientId) ? +m.clientId.slice(1) : null;
-  if (from != null) { if (d.t === 'bye') { delete ONLINE[from]; return; } ONLINE[from] = performance.now(); if (d.t === 'hb') return; }
+  if (from != null) { if (d.t === 'bye') { delete ONLINE[from]; return; } const was = isOnline(from); ONLINE[from] = performance.now(); if (!was && from !== S.me && performance.now() > 30000) spawnCat(); if (d.t === 'hb') return; }
   const now = performance.now(), key = d.t + (from ?? 'v');
   if (now - (RT.seen[key] || 0) < (d.t === 'poop' ? 2500 : 400)) return; RT.seen[key] = now;
   if (d.t === 'trick' && from != null && from !== S.me && typeof d.k === 'string' && Object.hasOwn(TRICKS, d.k) && S.claims[from] != null) { const F = fig(from), at = Number(d.at); if (F && Number.isFinite(at) && Math.abs(at - srvNow()) < 15000) startTrick(d.k, F, at); }
