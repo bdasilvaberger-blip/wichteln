@@ -1715,8 +1715,9 @@ function render(dt){
     }
     if (name) {
       c.font = `500 ${desk() ? 14 : 12}px Jost, Futura, sans-serif`;
-      const w = c.measureText(name).width + 8;
-      c.fillStyle = 'rgba(255,255,255,.9)'; const lh = desk() ? 18 : 15; c.fillRect(b.head[0] - w / 2, y - lh, w, lh);
+      const lh = desk() ? 18 : 15;
+      /* kein Hintergrund, nur eine feine weisse Kontur, damit der Name über Buchstaben lesbar bleibt */
+      c.lineJoin = 'round'; c.lineWidth = 2.2; c.strokeStyle = '#fff'; c.strokeText(name, b.head[0], y - 1);
       c.fillStyle = F.i === S.me ? INK : PINK; c.fillText(name, b.head[0], y - 1);
       /* grüner Punkt über dem Kopf: gerade online */
       if (isOnline(F.i)) { const r0 = desk() ? 5 : 4.2; c.beginPath(); c.arc(b.head[0], y - lh - r0 - 1, r0, 0, 7); c.fillStyle = '#22C55E'; c.fill(); c.lineWidth = 1.5; c.strokeStyle = '#fff'; c.stroke(); }
