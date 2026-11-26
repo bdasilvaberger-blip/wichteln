@@ -801,7 +801,7 @@ function layoutBox(L, fs, x0, x1, P){
   const ex = mobile() ? W / 2 : x0 + (x1 - x0) * .81, gy = mobile() ? top() + (bottom() - top()) * .87 : last.reduce((a, g) => a + g.gy, 0) / last.length + FH * .3;
   /* kommt von ausserhalb des Bildes herein, auf einer Bahn ohne Buchstaben */
   const out = bw / 2 + ov + 4, sx = mobile() ? -out : W + out, x = lerp(sx, ex, P);
-  L.box = { x, gy, w: bw, d: bd, h: bh, lh, ov, dir: Math.sign(ex - sx) || 1, done: P >= .999 };
+  L.box = { x, gy, w: bw, d: bd, h: bh, lh, ov, dir: Math.sign(ex - sx) || 1, done: P >= 1 };
   /* Grundfläche als Hindernis eintragen */
   const hw = bw / 2 + ov + FH * .02, hd = (bd / 2 + ov) * C + FH * .02;
   for (let y = Math.max(0, Math.floor(gy - hd)); y < Math.min(Hh, Math.ceil(gy + hd)); y++)
@@ -903,7 +903,7 @@ function computeTasks(){
     const dx = mobile() ? 0 : 1, dg = mobile() ? 1 : 0, a = mobile() ? -Math.PI / 2 : Math.PI;
     mv.filter((g, i) => i % 2 === 0 || mv.length < 5).slice(0, 5).forEach(g => {
       for (let d = FH * .2; d < FH * 3; d += 2) { const x = g.x + dx * d, gg = g.gy + dg * d * C;
-        if (idAt(x, gg) === -1 && clearAt(-1, x, gg, .18)) { const x2 = x + dx * FH * .06, g2 = gg + dg * FH * .06 * C; if (free(x2, g2) && !near(x2, g2)) { let e = 0; while (e < FH * 2 && idAt(x2 - dx * e, g2 - dg * e * C) === -1) e += 1; T.push({ x: x2, g: g2, a, kind: 'push', reach: e / FH }); } break; } }
+        if (idAt(x, gg) === -1 && clearAt(-1, x, gg, .18)) { const x2 = x + dx * FH * .06, g2 = gg + dg * FH * .06 * C; if (free(x2, g2) && !near(x2, g2)) { let e = FH * 2; for (const o of [-.14, 0, .14]) { let e2 = 0; const ox = dg * o * FH, og = dx * o * FH * C; while (e2 < e && idAt(x2 + ox - dx * e2, g2 + og - dg * e2 * C) === -1) e2 += 1; e = Math.min(e, e2); } T.push({ x: x2, g: g2, a, kind: 'push', reach: e / FH }); } break; } }
     });
   }
   const B = L.box;
@@ -911,25 +911,34 @@ function computeTasks(){
     const dir = B.dir, front = B.x + dir * (B.w / 2 + B.ov), face = dir > 0 ? Math.PI : 0;
     /* fünf ziehen am Seil, vor der Kiste in einer Reihe */
     for (let i = 0; i < 5; i++) { const x = front + dir * FH * (.55 + i * .46), g = B.gy + (i % 2 ? .07 : -.07) * FH * C; if (free(x, g) && !near(x, g)) T.push({ x, g, a: face, kind: 'pull', i }); }
-    /* zwei schieben hinten */
-    for (const k of [-1, 1]) { const x = B.x - dir * (B.w / 2 + B.ov + FH * .36), g = B.gy + k * Math.max(B.d * .25 * C, FH * .2); if (free(x, g) && !near(x, g)) T.push({ x, g, a: dir > 0 ? 0 : Math.PI, kind: 'push', reach: .36 }); }
+    /* in den letzten Minuten helfen weitere hinten mit schieben */
+    for (const k of [-1, 0, 1]) { const x = B.x - dir * (B.w / 2 + B.ov + FH * .36), g = B.gy + k * Math.max(B.d * .3 * C, FH * .24); if (free(x, g) && !near(x, g)) T.push({ x, g, a: dir > 0 ? 0 : Math.PI, kind: 'push', reach: .42, late: true }); }
   }
   L.tasks = T;
 }
+/* Schichten: niemand arbeitet ununterbrochen. Am Seil wird immer gezogen, nur mit wechselnden Figuren;
+   an den Buchstaben wird ab und zu geschoben; hinter der Kiste erst in den letzten Minuten */
+const rnd2 = (a, b) => a + Math.random() * (b - a);
 function managePushers(){
   const T = letters.tasks || [], want = isOpen() && view !== 'result';
   for (const F of Fs) if (F.push && (!want || F.drag || F.leave || F.trick || F.reveal)) F.push = null;
   if (!want) return;
-  const t0 = letters.t0 ?? (letters.t0 = clock), instant = clock - t0 < 1.5;
+  const first = letters.t0 == null; if (first) letters.t0 = clock;
+  const late = DEADLINE - srvNow() < 5 * 60e3;
   T.forEach((t, k) => {
-    if (Fs.some(F => F.push && F.push.k === k)) return;
+    const pull = t.kind === 'pull', W0 = Fs.find(F => F.push && F.push.k === k);
+    if (t.late && !late) { if (W0) W0.push = null; return; }
+    if (first) { t.next = pull || t.late || Math.random() < .5 ? 0 : clock + rnd2(3, 20); }
+    if (W0) { if (clock > t.until) { W0.push = null; W0.rest = clock + rnd2(20, 45); t.next = clock + (pull || t.late ? rnd2(.5, 2) : rnd2(8, 30)); } return; }
+    if (clock < (t.next || 0)) return;
     let best = null, bd = 1e9;
-    for (const F of Fs) { if (F.push || F.santa || F.reveal || S.claims[F.i] != null || F.i === sel || F.surf >= 0 || F.act || F.lean || F.sit || F.drag || F.fetch || F.pickUp || F.pet || F.trick || F.leave || F.enter > 0) continue;
+    for (const F of Fs) { if (F.push || clock < (F.rest || 0) || F.santa || F.reveal || S.claims[F.i] != null || F.i === sel || F.surf >= 0 || F.act || F.lean || F.sit || F.drag || F.fetch || F.pickUp || F.pet || F.trick || F.leave || F.enter > 0) continue;
       const d = Math.hypot(F.x - t.x, (F.g - t.g) / C); if (d < bd) { bd = d; best = F; } }
     if (!best) return;
     best.push = { k, ...t, on: false }; best.goal = null; best.goalStage = 0; best.pause = 0;
-    /* beim Laden sind sie schon bei der Arbeit */
-    if (instant) { best.x = t.x; best.g = t.g; best.push.on = true; best.surf = -1; best.z0 = 0; best.a = t.a; }
+    t.until = clock + (pull ? rnd2(18, 35) : t.late ? 1e9 : rnd2(8, 18));
+    /* beim Laden sind die ersten schon bei der Arbeit */
+    if (first || clock - letters.t0 < 1.5) { best.x = t.x; best.g = t.g; best.push.on = true; best.surf = -1; best.z0 = 0; best.a = t.a; }
   });
 }
 function pushPose(F, dt){
@@ -947,7 +956,7 @@ function pushPose(F, dt){
   P.lean = .5; P.pelvis.f = -.05; P.pelvis.z -= .04; P.yaw = 0;
   const bob = Math.sin(F.ph * 2) * .01;
   /* Hände genau an die Wand, nicht hinein */
-  const f = cl((K.reach || .36) - .2, .06, .33);
+  const f = cl((K.reach || .36) - .19, .06, .33);
   P.handL = { r: .1, f: f + bob, z: .62 }; P.handR = { r: -.1, f: f - bob, z: .62 };
   return P;
 }
