@@ -48,9 +48,7 @@ body{background:var(--w);color:var(--k);font:400 16px/1.5 "Jost","Futura","Centu
 #faq dl div{transition:opacity .45s var(--ease),transform .45s var(--ease)}
 #faq dl div.pend{opacity:0;transform:translateY(6px)}
 #faq .bubble{position:relative;margin:0 0 62px;padding:11px 14px;border:1.5px solid var(--k);border-radius:16px;font-size:15px;line-height:1.35;background:var(--w)}
-#faq .bubble::before,#faq .bubble::after{content:"";position:absolute;bottom:18px;width:0;height:0;border-style:solid}
-#faq .bubble::before{left:-12px;border-width:9px 12px 9px 0;border-color:transparent var(--k) transparent transparent}
-#faq .bubble::after{left:-9.6px;bottom:19.6px;border-width:7.4px 10px 7.4px 0;border-color:transparent var(--w) transparent transparent}
+#faq .bubble::before{content:"";position:absolute;left:-12.5px;bottom:12px;width:14px;height:22px;background:url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='14'%20height='22'%3E%3Crect%20x='10.6'%20y='1.4'%20width='3.4'%20height='19.2'%20fill='white'/%3E%3Cpath%20d='M11.75%201%20L1.6%2011%20L11.75%2021'%20fill='white'%20stroke='black'%20stroke-width='1.5'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat}
 @media(min-width:1024px){#faq{max-width:440px}#elfC{width:96px;height:144px}#faq .bubble{font-size:16px}}
 #faq dl{margin:0 0 20px;display:grid;gap:12px}
 #faq dl div{display:grid;grid-template-columns:96px 1fr;gap:10px;align-items:baseline}
