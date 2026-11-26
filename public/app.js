@@ -516,6 +516,60 @@ const clearAt = (surf, x, g, r) => {
   }
   return true;
 };
+/* ---------- Wege am Boden: wer zu einem Ziel will, geht um die Buchstaben herum statt in die Wand ----------
+   Raster über den Boden (freie Felder), kürzester Weg mit A*, dann immer zum weitesten sichtbaren Wegpunkt. */
+const NAV = { key: null, t: -1e9 };
+function navGrid(){
+  const key = W + '|' + Hh + '|' + FH;
+  if (NAV.key === key && clock - NAV.t < 3) return NAV;
+  const cs = FH * .2, nx = Math.ceil(W / cs) + 1, ny = Math.ceil(Hh / (cs * C)) + 1, ok = new Uint8Array(nx * ny);
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) ok[j * nx + i] = clearAt(-1, i * cs, j * cs * C) ? 1 : 0;
+  return Object.assign(NAV, { key, t: clock, cs, nx, ny, ok });
+}
+/* gerade Strecke am Boden frei? (Start und Ziel selbst dürfen knapp an einer Wand liegen) */
+function navLine(x, g, tx, tg, r){
+  const L = Math.hypot(tx - x, (tg - g) / C), m = Math.ceil(L / (FH * .12));
+  for (let t = 1; t < m; t++) { if (t * FH * .12 < FH * .1 || (m - t) * FH * .12 < FH * .1) continue; if (!clearAt(-1, x + (tx - x) * t / m, g + (tg - g) * t / m, r)) return false; }
+  return true;
+}
+function navPath(x, g, tx, tg){
+  const N = navGrid(), { cs, nx, ny, ok } = N;
+  /* nächstes freies Feld suchen, falls Start oder Ziel knapp an einer Wand liegt */
+  const cell = (x2, g2) => { const i0 = Math.round(x2 / cs), j0 = Math.round(g2 / (cs * C));
+    for (let r = 0; r < 6; r++) for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) { if (Math.max(Math.abs(di), Math.abs(dj)) !== r) continue; const i = i0 + di, j = j0 + dj; if (i >= 0 && j >= 0 && i < nx && j < ny && ok[j * nx + i]) return j * nx + i; }
+    return -1; };
+  const a = cell(x, g), b = cell(tx, tg); if (a < 0 || b < 0) return null;
+  const bi = b % nx, bj = (b - bi) / nx, hdist = q => { const i = q % nx, j = (q - i) / nx, di = Math.abs(i - bi), dj = Math.abs(j - bj); return (Math.max(di, dj) + .414 * Math.min(di, dj)) * cs; };
+  const dist = new Map([[a, 0]]), prev = new Map(), heap = [[hdist(a), a]];
+  const push = (d, q) => { heap.push([d, q]); let c = heap.length - 1; while (c) { const p2 = (c - 1) >> 1; if (heap[p2][0] <= heap[c][0]) break; [heap[p2], heap[c]] = [heap[c], heap[p2]]; c = p2; } };
+  const pop = () => { const t = heap[0], l = heap.pop(); if (heap.length) { heap[0] = l; let c = 0; for (;;) { const u = 2 * c + 1, v = u + 1; let m = c; if (u < heap.length && heap[u][0] < heap[m][0]) m = u; if (v < heap.length && heap[v][0] < heap[m][0]) m = v; if (m === c) break; [heap[m], heap[c]] = [heap[c], heap[m]]; c = m; } } return t; };
+  let n = 0;
+  while (heap.length && n++ < 20000) {
+    const [, q] = pop(); if (q === b) break; const d = dist.get(q), i = q % nx, j = (q - i) / nx;
+    for (const [di, dj, c] of [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, 1.414], [1, -1, 1.414], [-1, 1, 1.414], [-1, -1, 1.414]]) {
+      const i2 = i + di, j2 = j + dj; if (i2 < 0 || j2 < 0 || i2 >= nx || j2 >= ny) continue; const q2 = j2 * nx + i2; if (!ok[q2]) continue;
+      if (di && dj && (!ok[j * nx + i2] || !ok[j2 * nx + i])) continue;
+      const d2 = d + c * cs; if (d2 < (dist.has(q2) ? dist.get(q2) : 1e9)) { dist.set(q2, d2); prev.set(q2, q); push(d2 + hdist(q2), q2); }
+    }
+  }
+  if (!dist.has(b)) return null;
+  const out = []; for (let q = b; q !== a && q !== undefined; q = prev.get(q)) { const i = q % nx; out.push({ x: i * cs, g: (q - i) / nx * cs * C }); }
+  out.reverse(); out.push({ x: tx, g: tg }); return out;
+}
+/* Richtung zum Ziel: direkt, wenn frei; sonst dem geplanten Weg entlang */
+function navAngle(A, tx, tg, r = .2){
+  const direct = Math.atan2((tg - A.g) / C, tx - A.x);
+  /* die teuren Sichtprüfungen nur ein paar Mal pro Sekunde */
+  if (!A.navC || clock - A.navC.t > .2) A.navC = { t: clock, open: Math.hypot(tx - A.x, (tg - A.g) / C) < FH * .45 || navLine(A.x, A.g, tx, tg, r), tgt: null };
+  A.navOn = !A.navC.open;
+  if (A.navC.open) { A.nav = null; return direct; }
+  let N = A.nav;
+  if (!N || (clock - N.t > .4 && (clock - N.t > 1.5 || Math.hypot(N.tx - tx, (N.tg - tg) / C) > FH * .3))) { N = A.nav = { t: clock, tx, tg, pts: navPath(A.x, A.g, tx, tg) || [] }; A.navC.tgt = null; }
+  while (N.pts.length > 1 && Math.hypot(N.pts[0].x - A.x, (N.pts[0].g - A.g) / C) < FH * .2) { N.pts.shift(); A.navC.tgt = null; }
+  if (!A.navC.tgt || !N.pts.includes(A.navC.tgt)) { let tgt = N.pts[0]; for (let i = Math.min(N.pts.length, 10) - 1; i > 0; i--) if (navLine(A.x, A.g, N.pts[i].x, N.pts[i].g, r)) { tgt = N.pts[i]; break; } A.navC.tgt = tgt; }
+  const tgt = A.navC.tgt;
+  return tgt ? Math.atan2((tgt.g - A.g) / C, tgt.x - A.x) : direct;
+}
 /* Grundhöhe der Figur: beim Umdrehen vor dem Absteigen noch oben auf dem Block */
 const baseZ = F => F.act ? (F.act.turn < 1 ? hOf(F.act.from) : F.act.lowZ) : F.z0;
 /* Punkt relativ zur Kante: f entlang der Normalen (in den höheren Block), r entlang der Kante, in Figurhöhen */
@@ -751,7 +805,7 @@ function dogStep(dt){
     /* beim Besuch seitlich neben die Figur, damit man das Streicheln sieht */
     const vx = D.mode === 'visit' ? D.vF.x + D.vS * FH * .5 : 0, vg = D.mode === 'visit' ? D.vF.g : 0, vd = D.mode === 'visit' ? Math.hypot(vx - D.x, (vg - D.g) / C) : 0;
     if (D.mode === 'chase') want = 1.9;
-    let desired = D.mode === 'chase' ? Math.atan2((CAT.g - D.g) / C, CAT.x - D.x) : D.mode === 'stay' ? (out ? Math.atan2((Hh / 2 - D.g) / C, W / 2 - D.x) : Math.atan2((D.petF.g - D.g) / C, D.petF.x - D.x)) : D.mode === 'visit' ? (vd < FH * .12 ? Math.atan2(0, -D.vS) : Math.atan2((vg - D.g) / C, vx - D.x)) : D.a + (Math.sin(clock * .7 + 1) * 1.2 + Math.sin(clock * 1.9) * .6) * dt;
+    let desired = D.mode === 'chase' ? navAngle(D, CAT.x, CAT.g, .18) : D.mode === 'stay' ? (out ? Math.atan2((Hh / 2 - D.g) / C, W / 2 - D.x) : navAngle(D, D.petF.x, D.petF.g, .18)) : D.mode === 'visit' ? (vd < FH * .12 ? Math.atan2(0, -D.vS) : navAngle(D, vx, vg, .18)) : D.a + (Math.sin(clock * .7 + 1) * 1.2 + Math.sin(clock * 1.9) * .6) * dt;
     if (D.mode === 'visit') want = cl(vd / (FH * .4)) * .65;
     if (D.x < FH || D.x > W - FH || D.g < top() || D.g > fbot()) desired = Math.atan2((Hh / 2 - D.g) / C, W / 2 - D.x);
     for (const F of Fs) { if (F.surf >= 0 || F.drag || F === D.vF) continue; const dx = F.x - D.x, dg = (F.g - D.g) / C, d = Math.hypot(dx, dg);
@@ -762,8 +816,16 @@ function dogStep(dt){
   D.sp = lerp(D.sp, want, Math.min(1, dt * (D.mode === 'stay' ? 9 : 4)));
   const nx = D.x + Math.cos(D.a) * D.sp * FH * dt, ng = D.g + Math.sin(D.a) * D.sp * FH * dt * C;
   /* nie in eine Figur hineinlaufen */
-  const tooNear = Fs.some(F => F.surf < 0 && !F.drag && Math.hypot(F.x - nx, (F.g - ng) / C) < FH * (F === D.vF ? .42 : .32) && Math.hypot(F.x - nx, (F.g - ng) / C) < Math.hypot(F.x - D.x, (F.g - D.g) / C));
-  if (D.sp > .01 && !tooNear && clearAt(-1, nx, ng, .15)) { D.x = nx; D.g = ng; } else if (tooNear) D.a += 2.5 * dt;
+  const tooNear = (x, g) => Fs.some(F => F.surf < 0 && !F.drag && Math.hypot(F.x - x, (F.g - g) / C) < FH * (F === D.vF ? .42 : .32) && Math.hypot(F.x - x, (F.g - g) / C) < Math.hypot(F.x - D.x, (F.g - D.g) / C));
+  /* versperrt: seitlich vorbei, statt sich im Kreis zu drehen oder gegen die Wand zu laufen */
+  if (D.sp > .01) {
+    if (!tooNear(nx, ng) && clearAt(-1, nx, ng, .15)) { D.x = nx; D.g = ng; }
+    else { const st = D.sp * FH * dt; let ok = false;
+      for (const da of [.9, -.9, 1.6, -1.6]) { const a2 = D.a + da * (D.side || 1), x2 = D.x + Math.cos(a2) * st, g2 = D.g + Math.sin(a2) * st * C;
+        if (!tooNear(x2, g2) && clearAt(-1, x2, g2, .15)) { D.x = x2; D.g = g2; D.side = Math.sign(da) * (D.side || 1); ok = true; let d = a2 - D.a; d = Math.atan2(Math.sin(d), Math.cos(d)); D.a += cl(d, -3 * dt, 3 * dt); break; } }
+      if (!ok) D.sp *= .5; }
+  }
+  D.a = Math.atan2(Math.sin(D.a), Math.cos(D.a));
   if ((D.mode === 'pet' || (D.mode === 'stay' && !out)) && D.petF) { let d = Math.atan2((D.petF.g - D.g) / C, D.petF.x - D.x) - D.a; d = Math.atan2(Math.sin(d), Math.cos(d)); D.a += Math.sign(d) * Math.min(Math.abs(d), 3 * dt); }
   D.sniff = lerp(D.sniff, D.mode === 'sniff' ? 1 : D.mode === 'walk' || D.mode === 'visit' ? .25 : 0, Math.min(1, dt * 4));
   D.squat = lerp(D.squat, D.mode === 'poop' && D.t > .5 ? 1 : 0, Math.min(1, dt * 5));
@@ -1078,9 +1140,10 @@ function santaStep(dt){
   /* nur ein Santa aufs Mal: kommt der Schlitten, geht der Fussgänger */
   if (SANTA.walker && flying && !SANTA.walker.leave) { SANTA.walker.leave = true; SANTA.walker.fetch = null; }
   if (SANTA.walker) { const F = SANTA.walker; walkerThink(F, dt); if (F.box && !F.leave) { SANTA.on = true; SANTA.k = F.k; SANTA.box = F.box; } }
+  /* Weg schon kurz vorher planen, damit die Rechnung nicht mitten in die Fahrt fällt */
+  const R = FH * (desk() ? 1.35 : 1.2), key = k + '|' + W + '|' + Hh;
+  if (f && f.kind === 'drop' && now >= f.t0 - 3000 && now < f.t0 + FLY_MS && SANTA.pk !== key) { SANTA.pk = key; SANTA.R = R; SANTA.path = santaPath(f, R); }
   if (flying) {
-    const R = FH * (desk() ? 1.35 : 1.2), key = k + '|' + W + '|' + Hh;
-    if (SANTA.pk !== key) { SANTA.pk = key; SANTA.R = R; SANTA.path = santaPath(f, R); }
     const P = SANTA.path;
     if (P) {
       const u = (now - f.t0) / FLY_MS;
@@ -1121,9 +1184,14 @@ function dropGift(id, k, i){
 }
 /* Weg am Boden von einem Rand zum andern, mit Abstand zu allen Buchstaben und der Kiste.
    Raster über den Boden, kürzester Weg, dann gerade gezogen und gerundet. */
-function santaPath(f, R){
+/* Bodenpunkt frei im Umkreis r (in Weltmass) */
+function santaFree(x, g, r){
+  if (idAt(x, g) !== -1) return false;
+  for (let a = 0; a < 12; a++) { const ca = Math.cos(a * .5236), sa = Math.sin(a * .5236); for (const m of [.5, 1]) if (idAt(x + ca * r * m, g + sa * r * m * C) !== -1) return false; }
+  return true;
+}
+function santaRoute(f, R, rc){
   const cs = FH * .26, g0 = top() + FH * .1, g1 = fbot(), nx = Math.ceil(W / cs) + 1, ny = Math.max(1, Math.floor((g1 - g0) / (cs * C)) + 1);
-  const rc = R * .2 + FH * .1;
   const freeAt = (x, g) => {
     if (idAt(x, g) !== -1 || g < g0 - 1 || g > g1 + 1) return false;
     for (let a = 0; a < 10; a++) { const ca = Math.cos(a * .6283), sa = Math.sin(a * .6283); for (const m of [.5, 1]) if (idAt(x + ca * rc * m, g + sa * rc * m * C) !== -1) return false; }
@@ -1161,12 +1229,38 @@ function santaPath(f, R){
   /* gerade ziehen: so weit springen, wie die Strecke frei bleibt */
   const lineOk = (a, b) => { const L = Math.hypot(b.x - a.x, (b.g - a.g) / C), m = Math.ceil(L / (cs * .4)); for (let t = 1; t < m; t++) if (!freeAt(a.x + (b.x - a.x) * t / m, a.g + (b.g - a.g) * t / m)) return false; return true; };
   const st = [pts[0]]; for (let a = 0; a < pts.length - 1;) { let b = pts.length - 1; while (b > a + 1 && !lineOk(pts[a], pts[b])) b--; st.push(pts[b]); a = b; }
-  /* von weit draussen rein und wieder raus, dann Ecken runden */
-  pts = [{ x: -R * 3.2, g: st[0].g }, ...st, { x: W + R * 3.2, g: st[st.length - 1].g }];
-  for (let it = 0; it < 3; it++) { const o = [pts[0]]; for (let a = 0; a < pts.length - 1; a++) { const p = pts[a], q = pts[a + 1]; o.push({ x: p.x * .75 + q.x * .25, g: p.g * .75 + q.g * .25 }, { x: p.x * .25 + q.x * .75, g: p.g * .25 + q.g * .75 }); } o.push(pts[pts.length - 1]); pts = o; }
-  if (f.dir < 0) pts.reverse();
-  const cum = [0]; for (let a = 1; a < pts.length; a++) cum.push(cum[a - 1] + Math.hypot(pts[a].x - pts[a - 1].x, (pts[a].g - pts[a - 1].g) / C));
-  return { pts, cum, len: cum[cum.length - 1] };
+  return st;
+}
+/* Weg für den Schlitten: mit viel Abstand planen, runden, leicht schlängeln.
+   Danach wird der ganze Schlitten an jedem Punkt geprüft; passt etwas nicht, wird es ruhiger und gerader. */
+function santaPath(f, R){
+  const body = R * .21 + FH * .05, k = f.k;
+  const finish = pts => { if (f.dir < 0) pts = pts.slice().reverse(); const cum = [0]; for (let a = 1; a < pts.length; a++) cum.push(cum[a - 1] + Math.hypot(pts[a].x - pts[a - 1].x, (pts[a].g - pts[a - 1].g) / C)); return { pts, cum, len: cum[cum.length - 1] }; };
+  /* fein abtasten, mit Richtung */
+  const sample = pts => { const o = []; for (let a = 0; a < pts.length - 1; a++) { const p = pts[a], q = pts[a + 1], L = Math.hypot(q.x - p.x, (q.g - p.g) / C), m = Math.max(1, Math.ceil(L / (FH * .12))); for (let t = 0; t < m; t++) o.push({ x: p.x + (q.x - p.x) * t / m, g: p.g + (q.g - p.g) * t / m }); } o.push(pts[pts.length - 1]); return o; };
+  const heading = (o, i) => { const p = o[Math.max(0, i - 3)], q = o[Math.min(o.length - 1, i + 3)], dx = q.x - p.x, dg = (q.g - p.g) / C, L = Math.hypot(dx, dg) || 1; return [dx / L, dg / L]; };
+  /* ganzer Schlitten frei: Mitte, Vorder- und Hinterende */
+  const bodyOk = (o, i, x = o[i].x, g = o[i].g) => { if (x < -R * .6 || x > W + R * .6) return true; const [hx, hg] = heading(o, i);
+    return santaFree(x, g, body) && santaFree(x + hx * R * .45, g + hg * R * .45 * C, body * .85) && santaFree(x - hx * R * .5, g - hg * R * .5 * C, body * .85); };
+  const valid = o => o.every((p, i) => bodyOk(o, i));
+  const chaikin = (pts, n) => { for (let it = 0; it < n; it++) { const o = [pts[0]]; for (let a = 0; a < pts.length - 1; a++) { const p = pts[a], q = pts[a + 1]; o.push({ x: p.x * .75 + q.x * .25, g: p.g * .75 + q.g * .25 }, { x: p.x * .25 + q.x * .75, g: p.g * .25 + q.g * .75 }); } o.push(pts[pts.length - 1]); pts = o; } return pts; };
+  for (const fac of [1.7, 1.35, 1.1]) {
+    const st = santaRoute(f, R, (R * .22 + FH * .1) * fac); if (!st) continue;
+    const ext = [{ x: -R * 3.2, g: st[0].g }, ...st, { x: W + R * 3.2, g: st[st.length - 1].g }];
+    for (const sm of [3, 2, 0]) {
+      const base = sample(sm ? chaikin(ext, sm) : ext); if (!valid(base)) continue;
+      /* Schlängeln: seitlich hin und her, wo Platz ist; an engen Stellen weniger */
+      const A = R * .28, lam = R * 3.4, ph = hh(k, 11) * 6.283, amp = new Float32Array(base.length);
+      let s0 = 0; const sAt = [0]; for (let i = 1; i < base.length; i++) sAt.push(s0 += Math.hypot(base[i].x - base[i - 1].x, (base[i].g - base[i - 1].g) / C));
+      const off = (i, m) => { const [hx, hg] = heading(base, i), w = Math.sin(sAt[i] / lam * 6.283 + ph) * A * m; return { x: base[i].x - hg * w, g: base[i].g + hx * w * C }; };
+      for (let i = 0; i < base.length; i++) { amp[i] = 0; for (const m of [1, .6, .3]) { const q = off(i, m); if (bodyOk(base, i, q.x, q.g)) { amp[i] = m; break; } } }
+      /* weich ein- und ausblenden statt springen */
+      const lo = amp.map((_, i) => { let v = 1; for (let j = Math.max(0, i - 8); j <= Math.min(amp.length - 1, i + 8); j++) v = Math.min(v, amp[j]); return v; });
+      const wig = base.map((_, i) => { let a2 = 0, n2 = 0; for (let j = Math.max(0, i - 5); j <= Math.min(lo.length - 1, i + 5); j++) { a2 += lo[j]; n2++; } return off(i, a2 / n2); });
+      return finish(valid(wig) ? wig : base);
+    }
+  }
+  return null;
 }
 /* Punkt auf dem Weg nach Strecke s, mit geglätteter Fahrtrichtung */
 function santaPos(s){
@@ -1649,11 +1743,12 @@ function step(F, dt){
       /* so schnell wie nötig, damit das Streicheln überall im selben Moment beginnt */
       if (pushT) { const d = Math.hypot(pushT.x - F.x, (pushT.g - F.g) / C) / FH; want = d < .06 ? 0 : Math.min(F.want, d / Math.max(dt, 1 / 60) * .6); if (d < .1) { pushT.on = true; F.x = pushT.x; F.g = pushT.g; } }
       else if (run) { const d = Math.hypot(run.x - F.x, (run.g - F.g) / C) / FH; want = d < .08 ? 0 : Math.min(cl(d / Math.max(.3, PET_RUN - F.trick.t) * 1.15, .35, 9), d / Math.max(dt, 1 / 60) * .6); }
-      const desired = run ? Math.atan2((run.g - F.g) / C, run.x - F.x) : F.fetch && F.escT > 0 ? F.escA : F.fetch && !F.leave ? Math.atan2((F.fetch.g - F.g) / C, F.fetch.x - F.x) : F.leave ? (F.x < W / 2 ? Math.PI : 0) : F.enter > 0 ? (F.x < W / 2 ? 0 : Math.PI) : F.escT > 0 ? F.escA : F.goal ? Math.atan2((F.goal.S2.g - F.g) / C, F.goal.S2.x - F.x) : F.a + cl(turn, -4, 4) * dt;
+      F.navOn = false; const to = (tx, tg) => F.surf < 0 ? navAngle(F, tx, tg, 0) : Math.atan2((tg - F.g) / C, tx - F.x);
+      const desired = run ? to(run.x, run.g) : F.fetch && F.escT > 0 ? F.escA : F.fetch && !F.leave ? to(F.fetch.x, F.fetch.g) : F.leave ? (F.x < W / 2 ? Math.PI : 0) : F.enter > 0 ? (F.x < W / 2 ? 0 : Math.PI) : F.escT > 0 ? F.escA : F.goal ? to(F.goal.S2.x, F.goal.S2.g) : F.a + cl(turn, -4, 4) * dt;
       if (F.goal && F.escT <= 0) want *= cl(Math.hypot(F.goal.S2.x - F.x, (F.goal.S2.g - F.g) / C) / (FH * .7), .3, 1);
       let pick = null, da0 = 0;
       for (const da of [0, .35, -.35, .7, -.7, 1.1, -1.1, 1.6, -1.6, 2.2, -2.2, Math.PI]) {
-        const a2 = desired + da * (Math.sin(F.seed) > 0 ? 1 : -1); if (free(a2, F.goal && F.escT <= 0 && !da ? Math.hypot(F.goal.S2.x - F.x, (F.goal.S2.g - F.g) / C) / FH : 9)) { pick = a2; da0 = da; break; } }
+        const a2 = desired + da * (Math.sin(F.seed) > 0 ? 1 : -1); if (free(a2, F.navOn ? .26 : F.goal && F.escT <= 0 && !da ? Math.hypot(F.goal.S2.x - F.x, (F.goal.S2.g - F.g) / C) / FH : 9)) { pick = a2; da0 = da; break; } }
       if (F.goal) { F.goalBlock = pick !== null && Math.abs(pick - desired) < .01 ? 0 : (F.goalBlock || 0) + dt; if (F.goalBlock > 1.2) { F.goal = null; F.goalBlock = 0; } }
       if (pick === null && F.escT > 0) { pick = F.escA; want *= .5; }
       if (pick === null) { want = 0; F.a += 2 * dt; }
