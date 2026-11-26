@@ -2,7 +2,7 @@
 const $ = id => document.getElementById(id);
 const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const PINK = '#ff4fa8', INK = '#000';
-const N = 24, FREE = 6;
+const N = 24, FREE = 10;
 /* Anmeldung offen bis 1. Dezember, 12 Uhr (Zürich). Zum Testen: ?phase=los oder ?phase=offen */
 let DEADLINE = new Date('2026-12-01T12:00:00+01:00').getTime(), SKEW = 0, SKEWN = 0, SKEWRT = 1e9;
 const srvNow = () => Date.now() + SKEW;
@@ -129,7 +129,9 @@ function buildLetters(){
   let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   const x0 = W * (mobile() ? .06 : .05), x1 = W - x0;
   /* bis zum Anmeldeschluss schieben die Figuren alles langsam an den Platz: Platz für das Geschenk */
-  const P = boxProg();
+  /* erst rücken die Buchstaben zur Seite (60 % der Zeit), dann kommt das Geschenk (40 %) */
+  const P0 = boxProg(), P = ez(cl(P0 / .6)), PB = cl((P0 - .6) / .4);
+  L.PL = P;
   const y0 = top() + FH * 1.1, y1S = bottom() - FH * .5, y1E = mobile() ? top() + (bottom() - top()) * .64 : y1S, y1 = lerp(y1S, y1E, P);
   const rowSp = (y1 - y0) / rows.length, rowSpE = (y1E - y0) / rows.length;
   L.G = [];
@@ -205,7 +207,7 @@ function buildLetters(){
     const closed = pass(pass(m, true), false);
     for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) { const p = (y + by) * W + x + bx; if (closed[y * bw + x] && L.ids[p] === 0) L.ids[p] = 255; }
   });
-  layoutBox(L, fs, x0, x1, P);
+  layoutBox(L, fs, x0, x1, PB);
   /* Knopf für die Tastatur über dem Info Zeichen; Klicks kommen über den Platz */
   { const I = L.info, b = $('info');
     if (I) { const top_ = I.gy - I.gh / 2 * C - I.H * HZ, bot = I.gy + I.gh / 2 * C;
@@ -661,6 +663,7 @@ function build(){
   if (Math.abs(fh2 - FH) > 1) { FH = fh2; buildLetters(); for (let n = 0; n < 6 && letters.tooClose; n++) { letters.shrink *= .9; buildLetters(); } }
   buildSpots();
   makeDog();
+  computeTasks(); letters.t0 = null;
   Fs = [];
   wantedFigs().forEach(i => {
     const F = makeFig(i);
@@ -792,11 +795,12 @@ const BOX_START = Date.parse('2026-11-25T00:00:00+01:00');
 const boxProg = () => cl((srvNow() - BOX_START) / Math.max(1, DEADLINE - BOX_START));
 const BOX = { anim: null, shake: 0, open: false };
 function layoutBox(L, fs, x0, x1, P){
+  L.box = null; if (P <= 0) return;
   const last = L.G.filter(g => !g.info).slice(-4);
   const bw = fs * (mobile() ? 1.45 : 1.25), bd = bw * .62, bh = bw * .78, lh = bh * .17, ov = bw * .075;
   const ex = mobile() ? W / 2 : x0 + (x1 - x0) * .81, gy = mobile() ? top() + (bottom() - top()) * .87 : last.reduce((a, g) => a + g.gy, 0) / last.length + FH * .3;
-  /* Startpunkt am Rand, mit Platz für die Figuren, die schieben */
-  const room = bw / 2 + ov + FH * .85, sx = mobile() ? Math.min(ex, room) : Math.max(ex, W - room), x = lerp(sx, ex, P);
+  /* kommt von ausserhalb des Bildes herein, auf einer Bahn ohne Buchstaben */
+  const out = bw / 2 + ov + 4, sx = mobile() ? -out : W + out, x = lerp(sx, ex, P);
   L.box = { x, gy, w: bw, d: bd, h: bh, lh, ov, dir: Math.sign(ex - sx) || 1, done: P >= .999 };
   /* Grundfläche als Hindernis eintragen */
   const hw = bw / 2 + ov + FH * .02, hd = (bd / 2 + ov) * C + FH * .02;
@@ -870,7 +874,6 @@ function boxStep(dt){
   if (BOX.shake > 0) { BOX.shake -= dt; const k = BOX.shake / .55; B.grp.rotation.z = Math.sin(BOX.shake * 38) * .045 * k; B.grp.rotation.y = Math.sin(BOX.shake * 29) * .03 * k; }
   else B.grp.rotation.set(0, 0, 0);
   /* ziehende Figuren bis zum Anmeldeschluss */
-  managePushers(B);
   const A = BOX.anim; if (!A) return;
   A.t += dt;
   if (A.t < .55) { BOX.shake = Math.max(BOX.shake, .05); B.grp.rotation.z = Math.sin(A.t * 40) * .05; }
@@ -890,31 +893,74 @@ function boxStep(dt){
 }
 /* nach dem Ergebnis steht die Figur wieder neben der Kiste */
 function releaseReveal(){ for (const F of Fs) if (F.reveal) { const B = letters.box; F.reveal = null; F.hop = 0; if (B) { F.x = cl(B.x + (B.w / 2 + B.ov + FH * .35) * (B.dir > 0 ? 1 : -1), FH * .5, W - FH * .5); F.g = B.gy; } } }
-function managePushers(B){
-  const want = !B.done && isOpen() && view !== 'result' ? 3 : 0, side = -B.dir;
-  const spot = k => ({ x: B.x + side * (B.w / 2 + B.ov + FH * (.36 + (k === 1 ? .12 : 0))), g: B.gy + (k - 1) * Math.max(B.d * .42 * C, FH * .3) });
-  const P = Fs.filter(F => F.push);
-  for (const F of P) if (!want || F.drag || F.leave || F.trick) F.push = null;
+/* Arbeitsplätze bis zum Anmeldeschluss: Buchstaben schieben, dann das Geschenk am Seil ziehen und schieben */
+function computeTasks(){
+  const L = letters, T = [], free = (x, g) => x > FH * .5 && x < W - FH * .5 && g > top() && g < fbot() && idAt(x, g) === -1 && clearAt(-1, x, g, .18);
+  const near = (x, g) => T.some(t => Math.hypot(t.x - x, (t.g - g) / C) < FH * .4);
+  if (L.PL < 1 && !L.box) {
+    /* Desktop: 2026 rückt nach links, also von rechts schieben; Handy: alles rückt nach oben, also von vorne */
+    const mv = mobile() ? L.G : L.G.filter(g => /[0-9]/.test(g.ch) || g.info);
+    const dx = mobile() ? 0 : 1, dg = mobile() ? 1 : 0, a = mobile() ? -Math.PI / 2 : Math.PI;
+    mv.filter((g, i) => i % 2 === 0 || mv.length < 5).slice(0, 5).forEach(g => {
+      for (let d = FH * .2; d < FH * 3; d += 2) { const x = g.x + dx * d, gg = g.gy + dg * d * C;
+        if (idAt(x, gg) === -1 && clearAt(-1, x, gg, .18)) { const x2 = x + dx * FH * .06, g2 = gg + dg * FH * .06 * C; if (free(x2, g2) && !near(x2, g2)) { let e = 0; while (e < FH * 2 && idAt(x2 - dx * e, g2 - dg * e * C) === -1) e += 1; T.push({ x: x2, g: g2, a, kind: 'push', reach: e / FH }); } break; } }
+    });
+  }
+  const B = L.box;
+  if (B && !B.done) {
+    const dir = B.dir, front = B.x + dir * (B.w / 2 + B.ov), face = dir > 0 ? Math.PI : 0;
+    /* fünf ziehen am Seil, vor der Kiste in einer Reihe */
+    for (let i = 0; i < 5; i++) { const x = front + dir * FH * (.55 + i * .46), g = B.gy + (i % 2 ? .07 : -.07) * FH * C; if (free(x, g) && !near(x, g)) T.push({ x, g, a: face, kind: 'pull', i }); }
+    /* zwei schieben hinten */
+    for (const k of [-1, 1]) { const x = B.x - dir * (B.w / 2 + B.ov + FH * .36), g = B.gy + k * Math.max(B.d * .25 * C, FH * .2); if (free(x, g) && !near(x, g)) T.push({ x, g, a: dir > 0 ? 0 : Math.PI, kind: 'push', reach: .36 }); }
+  }
+  L.tasks = T;
+}
+function managePushers(){
+  const T = letters.tasks || [], want = isOpen() && view !== 'result';
+  for (const F of Fs) if (F.push && (!want || F.drag || F.leave || F.trick || F.reveal)) F.push = null;
   if (!want) return;
-  for (let k = 0; k < want; k++) {
-    if (Fs.some(F => F.push && F.push.k === k)) continue;
-    const s0 = spot(k); if (s0.x < FH * .5 || s0.x > W - FH * .5 || s0.g < top() || s0.g > fbot() || idAt(s0.x, s0.g) !== -1) continue;
+  const t0 = letters.t0 ?? (letters.t0 = clock), instant = clock - t0 < 1.5;
+  T.forEach((t, k) => {
+    if (Fs.some(F => F.push && F.push.k === k)) return;
     let best = null, bd = 1e9;
     for (const F of Fs) { if (F.push || F.santa || F.reveal || S.claims[F.i] != null || F.i === sel || F.surf >= 0 || F.act || F.lean || F.sit || F.drag || F.fetch || F.pickUp || F.pet || F.trick || F.leave || F.enter > 0) continue;
-      const d = Math.hypot(F.x - s0.x, (F.g - s0.g) / C); if (d < bd) { bd = d; best = F; } }
-    if (best) { best.push = { k, ...s0, on: false }; best.goal = null; best.goalStage = 0; best.pause = 0;
-      /* beim Laden sind sie schon am Schieben */
-      if (clock - (B.t0 ?? (B.t0 = clock)) < 1.5) { best.x = s0.x; best.g = s0.g; best.push.on = true; best.surf = -1; best.z0 = 0; } }
-  }
+      const d = Math.hypot(F.x - t.x, (F.g - t.g) / C); if (d < bd) { bd = d; best = F; } }
+    if (!best) return;
+    best.push = { k, ...t, on: false }; best.goal = null; best.goalStage = 0; best.pause = 0;
+    /* beim Laden sind sie schon bei der Arbeit */
+    if (instant) { best.x = t.x; best.g = t.g; best.push.on = true; best.surf = -1; best.z0 = 0; best.a = t.a; }
+  });
 }
 function pushPose(F, dt){
-  const B = letters.box; turnTo(F, B && B.dir > 0 ? 0 : Math.PI, 6 * dt);
+  const K = F.push; turnTo(F, K.a, 6 * dt);
+  if (K.kind === 'pull') {
+    /* Seil ziehen: zurückgelehnt, kleine Schritte rückwärts an Ort */
+    F.ph -= dt * 3.4;
+    const P = walkPose(F, { stride: .1 }), tug = Math.sin(clock * 3.4 + K.i) * .03;
+    P.lean = -.32 + tug; P.pelvis.f = .02; P.pelvis.z -= .05; P.yaw = 0;
+    P.handL = { r: .05, f: .3, z: .5 }; P.handR = { r: -.05, f: .24, z: .48 };
+    return P;
+  }
   F.ph += dt * 4.2;
   const P = walkPose(F, { stride: .13 });
   P.lean = .5; P.pelvis.f = -.05; P.pelvis.z -= .04; P.yaw = 0;
   const bob = Math.sin(F.ph * 2) * .01;
-  P.handL = { r: .1, f: .33 + bob, z: .62 }; P.handR = { r: -.1, f: .33 - bob, z: .62 };
+  /* Hände genau an die Wand, nicht hinein */
+  const f = cl((K.reach || .36) - .2, .06, .33);
+  P.handL = { r: .1, f: f + bob, z: .62 }; P.handR = { r: -.1, f: f - bob, z: .62 };
   return P;
+}
+/* das Seil: von der Kiste durch die Hände der Ziehenden */
+function ropeTo3D(){
+  const B = letters.box; if (!B || B.done || !isOpen()) return;
+  const pul = Fs.filter(F => F.push && F.push.on && F.push.kind === 'pull' && F.lastJ && F.base).sort((a, b) => a.push.i - b.push.i);
+  if (!pul.length) return;
+  const K = GL.parts.k, r = Math.max(1, FH * .012);
+  let prev = new THREE.Vector3(B.x + B.dir * (B.w / 2 + B.ov) - W / 2, B.bodyH * .55, (B.gy - Hh / 2) / C);
+  for (const F of pul) { const h = toW(F, F.base, F.lastJ.handL); addCyl(K, prev, h, r); prev = h; }
+  const last = pul[pul.length - 1], tail = toW(last, last.base, add(last.lastJ.handL, mul(last.lastJ.fw, -.35 * FH)));
+  tail.y = Math.max(.5, tail.y - FH * .25); addCyl(K, prev, tail, r);
 }
 function revealPose(F, dt){
   F.reveal.t += dt; F.a = Math.PI / 2;
@@ -1521,7 +1567,7 @@ function step(F, dt){
 function render(dt){
   for (const k in GL.parts) { GL.parts[k].nc = 0; GL.parts[k].ns = 0; }
   GL.wbox.count = 0;
-  dogStep(dt); dogTo3D(); poopTo3D(); assignPoops(); santaStep(dt); boxStep(dt);
+  dogStep(dt); dogTo3D(); poopTo3D(); assignPoops(); santaStep(dt); boxStep(dt); managePushers();
   const c = ctx;
   c.setTransform(DPR, 0, 0, DPR, 0, 0);
   c.clearRect(0, 0, W, Hh);
@@ -1539,6 +1585,7 @@ function render(dt){
     figTo3D(F, J, base);
   }
   /* wer den Platz verlassen hat, verschwindet */
+  ropeTo3D();
   for (let i = Fs.length - 1; i >= 0; i--) { const F = Fs[i]; if (F.leave && (F.x < -FH * .8 || F.x > W + FH * .8 || (F.surf >= 0 && !F.spot && !F.act))) Fs.splice(i, 1); }
   for (const k in GL.parts) { const P = GL.parts[k]; P.c.count = P.nc; P.sp.count = P.ns; P.c.instanceMatrix.needsUpdate = P.sp.instanceMatrix.needsUpdate = true; }
   /* erst Buchstaben allein (für die Konturen), dann alles (für die Figuren mit Verdeckung) */
@@ -1673,7 +1720,9 @@ let wasOpen = true, busy = false;
 function phaseTick(){
   if (!Fs.length) return;
   /* Anmeldeschluss erreicht, während die Seite offen ist: freie Figuren gehen, Auslosen geht los */
-  if (wasOpen && !isOpen()) { wasOpen = false; if (view === 'name') { sel = null; } syncFigs(); setView(S.me != null ? 'lobby' : 'pick'); return; }
+  if (wasOpen && !isOpen()) { wasOpen = false; if (view === 'name') { sel = null; } build(); syncFigs(); setView(S.me != null ? 'lobby' : 'pick'); return; }
+  /* das Geschenk kommt: einmal neu aufbauen, damit es da ist, ohne neu zu laden */
+  if (!letters.box && boxProg() > .6 && (view === 'pick' || view === 'lobby') && !drag && !busy) build();
 }
 setInterval(phaseTick, 1000);
 const DOTS = '\u0001';
