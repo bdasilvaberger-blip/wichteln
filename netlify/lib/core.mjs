@@ -167,6 +167,17 @@ export function makeHandler({ getStore, env = () => undefined, now = () => Date.
           await store.delete('fig/' + fig); await store.delete(nameKey(c[fig].name));
           return json({ ok: true });
         }
+        /* Code vergessen: neuen Code erstellen und nur dem Admin zeigen. Der alte Code gilt nicht mehr,
+           angemeldete Geräte bleiben angemeldet. Codes werden nie im Klartext gespeichert. */
+        if (route === 'admin/newcode') {
+          const fig = figOf(body.fig); if (fig === null || !c[fig]) return fail('Not found.', 404);
+          const e = await store.getWithMetadata('fig/' + fig, { type: 'json' });
+          if (!e || !e.data) return fail('Not found.', 404);
+          const pin = String(randomInt(10000)).padStart(4, '0'), salt = randomBytes(16).toString('hex');
+          const w = await store.setJSON('fig/' + fig, { ...e.data, pinHash: pinHash(pin, salt), salt }, { onlyIfMatch: e.etag });
+          if (!w.modified) return fail('Please try again in a moment.', 409);
+          return json({ fig, name: e.data.name, pin });
+        }
         if (route === 'admin/reset') {
           if (body.confirm !== 'DELETE ALL') return fail('Confirmation missing.', 400);
           const { blobs } = await store.list(); await Promise.all(blobs.map(b => store.delete(b.key)));
