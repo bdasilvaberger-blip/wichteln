@@ -30,14 +30,15 @@ body{background:var(--w);color:var(--k);font:400 16px/1.5 "Jost","Futura","Centu
 #info:focus-visible{outline:2px solid var(--k);outline-offset:2px}
 #info[hidden]{display:none}
 #faq{border:1.5px solid var(--k);border-radius:22px;padding:26px 24px 22px;max-width:min(380px,calc(100vw - 32px));width:100%;color:var(--k);background:var(--w)}
-#faq::backdrop,#notice::backdrop{background:rgba(255,255,255,.75)}
-#notice{border:1.5px solid var(--k);border-radius:22px;padding:26px 24px 22px;max-width:min(360px,calc(100vw - 32px));width:100%;color:var(--k);background:var(--w);text-align:center}
-#notice .mark{width:50px;height:50px;margin:0 auto 14px;border-radius:50%;background:var(--p);display:grid;place-items:center;font-size:26px;font-weight:700;line-height:1}
-#notice h2{margin:0 0 10px;font-weight:500;font-size:22px}
-#notice p{margin:0 0 12px;font-size:16px;line-height:1.4}
-#notice p.small{color:var(--mid);font-size:14px;margin-bottom:20px}
-#notice .pill{width:100%}
-#notice:focus{outline:none}
+#faq::backdrop,#notice::backdrop,#boxNote::backdrop{background:rgba(255,255,255,.75)}
+#notice,#boxNote{border:1.5px solid var(--k);border-radius:22px;padding:26px 24px 22px;max-width:min(360px,calc(100vw - 32px));width:100%;color:var(--k);background:var(--w);text-align:center}
+#notice .mark,#boxNote .mark{width:50px;height:50px;margin:0 auto 14px;border-radius:50%;background:var(--p);display:grid;place-items:center;font-size:26px;font-weight:700;line-height:1}
+#notice h2,#boxNote h2{margin:0 0 10px;font-weight:500;font-size:22px}
+#notice p,#boxNote p{margin:0 0 12px;font-size:16px;line-height:1.4}
+#notice p.small,#boxNote p.small{color:var(--mid);font-size:14px;margin-bottom:20px}
+#notice .pill,#boxNote .pill{width:100%}
+#notice:focus,#boxNote:focus{outline:none}
+#boxNote p{margin-bottom:22px}
 @media(min-width:1024px){#notice h2{font-size:26px}#notice p{font-size:17px}}
 #faq h2{margin:0 0 16px;font-weight:500;font-size:22px}
 #faq dl{margin:0 0 20px;display:grid;gap:12px}
@@ -94,6 +95,7 @@ button.pill.pink{background:var(--p);border-color:var(--p);color:var(--k)}
 .link{font:inherit;font-size:15px;color:var(--mid);background:none;border:0;padding:6px 10px;margin-top:-6px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
 .link[hidden]{display:none}
 #scroll.ready{background:var(--k);color:var(--w)}
+#drawBtn:not(:focus-visible){position:absolute;width:1px;height:1px;min-height:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;padding:0;border:0}
 #acts{display:flex;justify-content:center;gap:8px;margin-top:2px}
 #acts[hidden]{display:none}
 #acts button{position:relative;overflow:hidden;font:inherit;font-weight:500;font-size:14px;letter-spacing:.01em;height:38px;padding:0 15px;border-radius:999px;border:1.5px solid var(--k);background:var(--w);color:var(--k);cursor:pointer;white-space:nowrap;-webkit-tap-highlight-color:transparent}
@@ -148,6 +150,12 @@ button.pill.pink{background:var(--p);border-color:var(--p);color:var(--k)}
   <p id="noticeD">Whoever draws you needs to know who you are. Please enter the name your friends know you by.</p>
   <p class="small">Two of you with the same first name? Add the first letter of your last name.</p>
   <button class="pill" type="button" id="noticeOk">Got it</button>
+</dialog>
+<dialog id="boxNote" aria-labelledby="boxNoteT" aria-describedby="boxNoteD" autofocus>
+  <div class="mark" aria-hidden="true">!</div>
+  <h2 id="boxNoteT"></h2>
+  <p id="boxNoteD"></p>
+  <button class="pill" type="button" id="boxNoteOk">Okay</button>
 </dialog>
 <button id="info" type="button" aria-label="About Wichteln 2026" aria-haspopup="dialog"></button>
 <dialog id="faq" aria-labelledby="faqT">

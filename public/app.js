@@ -128,22 +128,24 @@ function buildLetters(){
   /* Buchstaben verteilt über den Platz, leicht gedreht, mit Platz zum Durchgehen */
   let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   const x0 = W * (mobile() ? .06 : .05), x1 = W - x0;
-  const y0 = top() + FH * 1.1, y1 = bottom() - FH * .5;
-  const rowSp = (y1 - y0) / rows.length;
+  /* bis zum Anmeldeschluss schieben die Figuren alles langsam an den Platz: Platz für das Geschenk */
+  const P = boxProg();
+  const y0 = top() + FH * 1.1, y1S = bottom() - FH * .5, y1E = mobile() ? top() + (bottom() - top()) * .64 : y1S, y1 = lerp(y1S, y1E, P);
+  const rowSp = (y1 - y0) / rows.length, rowSpE = (y1E - y0) / rows.length;
   L.G = [];
   const maxN = Math.max(...rows.map(r => r.replace('i', '').length));
-  const fs = Math.floor(Math.min((x1 - x0) / maxN * (mobile() ? .66 : desk() ? .76 : .68), rowSp / C * .5, FH * 3) * (L.shrink || 1));
+  const fs = Math.floor(Math.min((x1 - x0) / maxN * (mobile() ? .66 : desk() ? .76 : .68), rowSpE / C * .5, FH * 3) * (L.shrink || 1));
   rows.forEach((row, ri) => {
     /* das i braucht keinen eigenen Platz: es steht direkt rechts neben der 6 */
-    const hasI = row.includes('i'), rx1 = hasI ? x1 - fs * .8 : x1, letters_ = row.replace('i', '');
+    const hasI = row.includes('i'), rx1 = hasI ? lerp(x1 - fs * 1.05, mobile() ? x1 - fs * 1.05 : x0 + (x1 - x0) * .54, P) : x1, letters_ = row.replace('i', '');
     const unit = (rx1 - x0) / letters_.length; let acc = 0, lastX = 0;
     [...row].forEach(ch => {
       let x;
-      if (ch === 'i') x = lastX + fs * .85;
+      if (ch === 'i') x = lastX + fs * 1.1;
       else { x = x0 + acc + unit / 2 + (rnd() - .5) * unit * .16; acc += unit; lastX = x; }
       const gy = y0 + rowSp * (ri + .55) + (rnd() - .5) * rowSp * .42;
       const info = ch === 'i';
-      const H = info ? Math.round(Math.min(FH * .6, fs * .35)) : Math.round(Math.min(FH * 1.75, fs * .95 * heights[L.G.length % heights.length]));
+      const H = info ? Math.round(fs * .2) : Math.round(Math.min(FH * 1.75, fs * .95 * heights[L.G.length % heights.length]));
       L.G.push({ ch, x, gy, rot: info ? 0 : (rnd() - .5) * .38, H, E: H * HZ, info });
     });
   });
@@ -152,7 +154,7 @@ function buildLetters(){
   const ix = idc.getContext('2d', { willReadFrequently: true });
   L.fs = fs;
   L.tooClose = false;
-  L.G.forEach((g, i) => { ix.save(); ix.translate(g.x, g.gy); ix.scale(1, C); ix.rotate(g.rot); ix.fillStyle = `rgb(${i + 1},0,0)`; ix.fill(glyphPath(g.ch, fs)); ix.restore(); });
+  L.G.forEach((g, i) => { ix.save(); ix.translate(g.x, g.gy); ix.scale(1, C); ix.rotate(g.rot); ix.fillStyle = `rgb(${i + 1},0,0)`; if (g.info) { ix.beginPath(); ix.arc(0, 0, fs * .3, 0, 7); ix.fill(); } else ix.fill(glyphPath(g.ch, fs)); ix.restore(); });
   const data = ix.getImageData(0, 0, W, Hh).data;
   L.idW = W; L.idH = Hh; L.ids = new Uint8Array(W * Hh);
   const NG = L.G.length, infoId = L.G.findIndex(g => g.info) + 1;
@@ -178,7 +180,7 @@ function buildLetters(){
       for (const q of comp) L.ids[q] = fill;
     }
   }
-  { const g = L.G.find(q => q.info); L.info = g ? { x: g.x, gy: g.gy, gw: GLYPHS.i.w * fs / 100, gh: GLYPHS.i.h * fs / 100, H: g.H } : null; }
+  { const g = L.G.find(q => q.info); L.info = g ? { x: g.x, gy: g.gy, gw: fs * .6, gh: fs * .6, H: g.H } : null; }
   /* Nischen sperren: morphologisches Schliessen je Buchstabe, nur was dazukommt */
   const r = Math.round(FH * .3);
   L.G.forEach((g, i) => {
@@ -203,14 +205,17 @@ function buildLetters(){
     const closed = pass(pass(m, true), false);
     for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) { const p = (y + by) * W + x + bx; if (closed[y * bw + x] && L.ids[p] === 0) L.ids[p] = 255; }
   });
+  layoutBox(L, fs, x0, x1, P);
   /* Knopf für die Tastatur über dem Info Zeichen; Klicks kommen über den Platz */
   { const I = L.info, b = $('info');
     if (I) { const top_ = I.gy - I.gh / 2 * C - I.H * HZ, bot = I.gy + I.gh / 2 * C;
       Object.assign(b.style, { display: '', left: (I.x - I.gw / 2 - 10) + 'px', top: (top_ - 10) + 'px', width: (I.gw + 20) + 'px', height: (bot - top_ + 20) + 'px' }); }
     else b.style.display = 'none'; }
   /* 3D Blöcke aus den Vektorformen der Schrift */
-  for (const m of GL.letters) { GL.scene.remove(m); m.geometry.dispose(); m.children.forEach(c => c.geometry.dispose()); }
+  for (const m of GL.letters) { GL.scene.remove(m); m.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material && o.material.uniforms && o.material.uniforms.map) { o.material.uniforms.map.value.dispose(); o.material.dispose(); } }); }
+  GL.passB = [];
   GL.letters = L.G.map(g => {
+    if (g.info) return infoDisc(g, fs);
     const shapes = glyphShapes(g.ch, fs);
     const geo = new THREE.ExtrudeGeometry(shapes, { depth: g.H, bevelEnabled: false, curveSegments: 14 });
     geo.rotateX(-Math.PI / 2);
@@ -221,6 +226,7 @@ function buildLetters(){
     m.position.set(g.x - W / 2, 0, (g.gy - Hh / 2) / C); m.rotation.y = -g.rot;
     GL.scene.add(m); return m;
   });
+  if (L.box) GL.letters.push(boxMesh(L.box));
 }
 /* ---------- WebGL: echte Tiefe, Konturen über einen Kantenfilter ---------- */
 const GL = { letters: [] };
@@ -234,6 +240,9 @@ function initGL(){
     #endif
     vN = normalize(normalMatrix * n); gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0); }`;
   const fsx = `uniform float uId; varying vec3 vN; void main(){ gl_FragColor = vec4(normalize(vN) * .5 + .5, uId / 255.0); }`;
+  GL.textMat = (tex, id) => new THREE.ShaderMaterial({ uniforms: { map: { value: tex }, uId: { value: id } }, transparent: false, side: THREE.DoubleSide,
+    vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `uniform sampler2D map; uniform float uId; varying vec2 vUv; void main(){ if (texture2D(map, vUv).a < .5) discard; gl_FragColor = vec4(.5, .5, 1., uId / 255.0); }` });
   GL.mat = [0, 1, 2, 3, 4].map(id => new THREE.ShaderMaterial({ vertexShader: vs, fragmentShader: fsx, uniforms: { uId: { value: id } }, side: THREE.DoubleSide }));
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(40000, 40000), GL.mat[0]); ground.rotation.x = -Math.PI / 2; ground.position.y = -.01;
   GL.scene.add(ground);
@@ -248,6 +257,7 @@ function initGL(){
     GL.parts[key] = { c, sp, nc: 0, ns: 0 };
   }
   /* Schlittenkasten: vollflächig weiss, verdeckt die Buchstaben dahinter */
+  GL.matPinkO = new THREE.ShaderMaterial({ vertexShader: GL.mat[0].vertexShader, fragmentShader: GL.mat[0].fragmentShader, uniforms: { uId: { value: 7 } }, side: THREE.DoubleSide });
   GL.matW = new THREE.ShaderMaterial({ vertexShader: GL.mat[0].vertexShader, fragmentShader: GL.mat[0].fragmentShader, uniforms: { uId: { value: 6 } }, side: THREE.DoubleSide });
   GL.wbox = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), GL.matW, 6); GL.wbox.frustumCulled = false; GL.wbox.count = 0; GL.scene.add(GL.wbox);
   /* Filter: Kanten aus Normalen, Tiefe und Farbkennung */
@@ -283,6 +293,7 @@ function initGL(){
         if (id > .5 && id < 1.5) col = vec3(0.0);
         if (id > 1.5 && id < 2.5) col = uPink;
         if (id > 5.5 && id < 6.5) col = vec3(1.0);
+        if (id > 6.5 && id < 7.5) col = mix(uPink, vec3(0.0), e);
 
         gl_FragColor = vec4(col, 1.0);
       }`
@@ -703,7 +714,7 @@ function dogStep(dt){
   /* eine Figur in der Nähe streichelt den Hund */
   if (D.mode === 'pet' && (!D.petF || !D.petF.pet)) { D.mode = 'walk'; D.t = 2; D.petF = null; }
   if (D.mode === 'stay' && (!D.petF || !D.petF.trick)) { D.mode = 'walk'; D.t = 2; D.petF = null; }
-  const petOk = F => !F.santa && F.surf < 0 && !F.act && !F.lean && !F.sit && !F.drag && !F.fetch && !F.pickUp && !F.pet && !F.trick && !F.leave && !(F.enter > 0) && !F.flyHide && F.i !== sel && clock > (F.petCool || 0);
+  const petOk = F => !F.santa && !F.push && !F.reveal && F.surf < 0 && !F.act && !F.lean && !F.sit && !F.drag && !F.fetch && !F.pickUp && !F.pet && !F.trick && !F.leave && !(F.enter > 0) && !F.flyHide && F.i !== sel && clock > (F.petCool || 0);
   const dist = F => Math.hypot(F.x - D.x, (F.g - D.g) / C);
   if (D.mode === 'visit' && (!D.vF || !petOk(D.vF) || D.t <= 0)) { D.mode = 'walk'; D.t = 2; D.vF = null; }
   if (D.mode === 'visit' && dist(D.vF) < FH * 1.4) { D.vF.goal = null; D.vF.goalStage = 0; D.vF.pause = Math.max(D.vF.pause || 0, .5); }
@@ -779,6 +790,159 @@ function dogTo3D(){
   const tb = L(-.22, 0, bz + .05), wag = Math.sin(clock * (D.mode === 'pet' ? 22 : sn > .5 ? 16 : 10)) * (D.mode === 'pet' ? .08 : .05);
   addCyl(Wt, w(tb), w(add(tb, L(-.06 - sq * .02, wag, .13 + sq * .04))), .022 * R);
 }
+/* ---------- Das Geschenk: wird bis zum Anmeldeschluss an seinen Platz geschoben, am Tag selbst geöffnet ---------- */
+const BOX_START = Date.parse('2026-11-25T00:00:00+01:00');
+const boxProg = () => cl((srvNow() - BOX_START) / Math.max(1, DEADLINE - BOX_START));
+const BOX = { anim: null, shake: 0, open: false };
+function layoutBox(L, fs, x0, x1, P){
+  const last = L.G.filter(g => !g.info).slice(-4);
+  const bw = fs * (mobile() ? 1.45 : 1.25), bd = bw * .62, bh = bw * .78, lh = bh * .17, ov = bw * .075;
+  const ex = mobile() ? W / 2 : x0 + (x1 - x0) * .81, gy = mobile() ? top() + (bottom() - top()) * .87 : last.reduce((a, g) => a + g.gy, 0) / last.length + FH * .3;
+  /* Startpunkt am Rand, mit Platz für die Figuren, die schieben */
+  const room = bw / 2 + ov + FH * .85, sx = mobile() ? Math.min(ex, room) : Math.max(ex, W - room), x = lerp(sx, ex, P);
+  L.box = { x, gy, w: bw, d: bd, h: bh, lh, ov, dir: Math.sign(ex - sx) || 1, done: P >= .999 };
+  /* Grundfläche als Hindernis eintragen */
+  const hw = bw / 2 + ov + FH * .02, hd = (bd / 2 + ov) * C + FH * .02;
+  for (let y = Math.max(0, Math.floor(gy - hd)); y < Math.min(Hh, Math.ceil(gy + hd)); y++)
+    for (let X = Math.max(0, Math.floor(x - hw)); X < Math.min(W, Math.ceil(x + hw)); X++) L.ids[y * W + X] = 255;
+}
+/* Info: flache weisse Scheibe, das i obenauf in Pink */
+function infoDisc(g, fs){
+  const r = fs * .3, grp = new THREE.Group();
+  const d = new THREE.Mesh(new THREE.CylinderGeometry(r, r, g.H, 56), GL.mat[0]); d.position.y = g.H / 2; grp.add(d);
+  const fi = r * 1.3 / (GLYPHS.i.h / 100), ig = new THREE.ShapeGeometry(glyphShapes('i', fi), 10); ig.rotateX(-Math.PI / 2); ig.translate(0, g.H + .4, 0);
+  const im = new THREE.Mesh(ig, GL.mat[2]); grp.add(im); GL.passB.push(im);
+  grp.position.set(g.x - W / 2, 0, (g.gy - Hh / 2) / C); GL.scene.add(grp); return grp;
+}
+function textTex(txt, weight){
+  const cvs = document.createElement('canvas'); cvs.width = 1024; cvs.height = 320; const x = cvs.getContext('2d');
+  x.font = `${weight} 210px Jost, Futura, sans-serif`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = '#000'; x.fillText(txt, 512, 172);
+  const t = new THREE.CanvasTexture(cvs); t.minFilter = THREE.LinearFilter; return t;
+}
+function boxMesh(B){
+  const { w: bw, d: bd, h: bh, lh, ov } = B, grp = new THREE.Group(), lid = new THREE.Group(), bow = new THREE.Group();
+  const add3 = (par, geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); par.add(m); return m; };
+  const bodyH = bh - lh * .6;
+  add3(grp, new THREE.BoxGeometry(bw, bodyH, bd), GL.mat[0], 0, bodyH / 2, 0);
+  /* "Draw!" vorne auf der Kiste: nur im zweiten Durchgang, damit es keine Kontur bekommt */
+  const tp = add3(grp, new THREE.PlaneGeometry(bw * .86, bw * .86 * 320 / 1024), GL.textMat(textTex('Draw!', 500), 1), 0, bodyH * .44, bd / 2 + .6); GL.passB.push(tp);
+  /* Deckel mit klarer Unterkante */
+  add3(lid, new THREE.BoxGeometry(bw + ov * 2, lh, bd + ov * 2), GL.mat[0], 0, lh / 2, 0);
+  const lw = Math.max(1.6, FH * .022);
+  add3(lid, new THREE.BoxGeometry(bw + ov * 2 + lw, lw, lw), GL.mat[1], 0, 0, bd / 2 + ov);
+  for (const sd of [1, -1]) add3(lid, new THREE.BoxGeometry(lw, lw, bd + ov * 2 + lw), GL.mat[1], sd * (bw / 2 + ov), 0, 0);
+  /* Masche */
+  const R = bw * .17, zf = bd / 2 + ov, pinkO = GL.matPinkO;
+  for (const sd of [1, -1]) {
+    const t = add3(bow, new THREE.TorusGeometry(R, R * .26, 16, 40), pinkO, sd * R * 1.02, R * .62, -R * .15); t.scale.set(1, .78, 1); t.rotation.set(-.35, sd * .35, sd * .38);
+    const ax = sd * R * .25, bx = sd * R * 1.15, len = Math.hypot(bx - ax, zf);
+    const fl = add3(bow, new THREE.BoxGeometry(R * .42, R * .07, len), pinkO, (ax + bx) / 2, R * .04, zf / 2); fl.rotation.y = Math.atan2(bx - ax, zf);
+    const hg = add3(bow, new THREE.BoxGeometry(R * .42, lh * 1.7, R * .07), pinkO, bx, -lh * .8 + lh, zf + R * .04); hg.rotation.z = -sd * .12;
+  }
+  add3(bow, new THREE.BoxGeometry(R * .62, R * .5, R * .5), pinkO, 0, R * .5, 0).rotation.z = .08;
+  bow.position.y = lh; lid.add(bow);
+  /* offene Kiste: Rand der Öffnung oben */
+  const rim = new THREE.Group(), wt = bw * .06, lw2 = Math.max(1.4, FH * .02);
+  for (const [w2, d2, x, z] of [[bw - wt * 2, lw2, 0, bd / 2 - wt], [bw - wt * 2, lw2, 0, -bd / 2 + wt], [lw2, bd - wt * 2, bw / 2 - wt, 0], [lw2, bd - wt * 2, -bw / 2 + wt, 0]])
+    add3(rim, new THREE.BoxGeometry(w2, lw2, d2), GL.mat[1], x, bodyH + .3, z);
+  rim.visible = false; grp.add(rim); B.rim = rim;
+  lid.position.y = bh - lh; grp.add(lid);
+  grp.position.set(B.x - W / 2, 0, (B.gy - Hh / 2) / C);
+  B.grp = grp; B.lid = lid; B.bow = bow; B.bodyH = bodyH;
+  GL.scene.add(grp);
+  if (BOX.open) setBoxOpen(B, 1);
+  return grp;
+}
+/* offen: Masche weg, Deckel liegt neben der Kiste */
+function setBoxOpen(B, k){
+  const { w: bw, d: bd, h: bh, lh } = B, side = B.dir > 0 ? 1 : -1;
+  B.bow.visible = k < .35; B.bow.scale.setScalar(Math.max(.001, 1 - k / .35));
+  const q = ez(cl((k - .3) / .7)), arc = Math.sin(q * Math.PI);
+  /* Deckel fliegt hoch und landet flach neben der Kiste, leicht schräg */
+  B.lid.position.set(lerp(0, side * (bw + B.ov * 2 + FH * .25), q), lerp(bh - lh, 0, q) + arc * bh * 1.1, lerp(0, bd * .2, q));
+  B.lid.rotation.set(-arc * .5, lerp(0, side * .35, q), -side * Math.sin(q * Math.PI) * .9);
+  B.rim.visible = k > .45;
+}
+const boxScreen = () => { const B = letters.box; if (!B) return null;
+  const hw = B.w / 2 + B.ov, hd = B.d / 2 + B.ov, top_ = sy(B.gy, -hd, B.h + B.w * .3), bot = sy(B.gy, hd, 0);
+  return { x0: B.x - hw - 6, x1: B.x + hw + 6, y0: top_ - 6, y1: bot + 6 }; };
+const onBox = (x, y) => { const b = boxScreen(); return !!b && (view === 'pick' || view === 'lobby') && x > b.x0 && x < b.x1 && y > b.y0 && y < b.y1; };
+function boxStep(dt){
+  const B = letters.box; if (!B || !B.grp) return;
+  /* antippen vor dem Tag: kurz wackeln */
+  if (BOX.shake > 0) { BOX.shake -= dt; const k = BOX.shake / .55; B.grp.rotation.z = Math.sin(BOX.shake * 38) * .045 * k; B.grp.rotation.y = Math.sin(BOX.shake * 29) * .03 * k; }
+  else B.grp.rotation.set(0, 0, 0);
+  /* ziehende Figuren bis zum Anmeldeschluss */
+  managePushers(B);
+  const A = BOX.anim; if (!A) return;
+  A.t += dt;
+  if (A.t < .55) { BOX.shake = Math.max(BOX.shake, .05); B.grp.rotation.z = Math.sin(A.t * 40) * .05; }
+  if (A.t >= .55 && !A.popped) { A.popped = true; const s0 = sy(B.gy, 0, B.h + B.w * .12); POPS.push({ x: B.x, y: s0, r: B.w * .2, t: 0 }); }
+  setBoxOpen(B, cl((A.t - .55) / 1.1));
+  /* das Geschenk für dich springt heraus und winkt */
+  const F = fig(A.target);
+  if (F && A.t >= 1.1) {
+    if (!F.reveal) { F.reveal = { t: 0 }; F.drag = null; F.act = null; F.lean = null; F.sit = null; F.fetch = null; F.pickUp = null; F.pet = null; endTrick(F); F.push = null;
+      F.x = B.x; F.g = B.gy; F.surf = -1; F.z0 = 0; F.a = Math.PI / 2; F.sw = null; F.dropZ = 0; }
+    const t = A.t - 1.1, top_ = B.bodyH / FH, j = ez(cl(t / .55));
+    /* springt aus der Kiste hoch und bleibt halb drin stehen */
+    const rest = top_ - .28;
+    F.hop = t < .55 ? lerp(-1.1, top_ + .6, j) : t < 1 ? lerp(top_ + .6, rest, ez((t - .55) / .45)) : rest;
+  }
+  if (A.t > 3.6 && !A.done) { A.done = true; BOX.open = true; S.draws[S.me] = A.target; busy = false; showResult(); }
+}
+/* nach dem Ergebnis steht die Figur wieder neben der Kiste */
+function releaseReveal(){ for (const F of Fs) if (F.reveal) { const B = letters.box; F.reveal = null; F.hop = 0; if (B) { F.x = cl(B.x + (B.w / 2 + B.ov + FH * .35) * (B.dir > 0 ? 1 : -1), FH * .5, W - FH * .5); F.g = B.gy; } } }
+function managePushers(B){
+  const want = !B.done && isOpen() && view !== 'result' ? 3 : 0, side = -B.dir;
+  const spot = k => ({ x: B.x + side * (B.w / 2 + B.ov + FH * (.36 + (k === 1 ? .12 : 0))), g: B.gy + (k - 1) * Math.max(B.d * .42 * C, FH * .3) });
+  const P = Fs.filter(F => F.push);
+  for (const F of P) if (!want || F.drag || F.leave || F.trick) F.push = null;
+  if (!want) return;
+  for (let k = 0; k < want; k++) {
+    if (Fs.some(F => F.push && F.push.k === k)) continue;
+    const s0 = spot(k); if (s0.x < FH * .5 || s0.x > W - FH * .5 || s0.g < top() || s0.g > fbot() || idAt(s0.x, s0.g) !== -1) continue;
+    let best = null, bd = 1e9;
+    for (const F of Fs) { if (F.push || F.santa || F.reveal || S.claims[F.i] != null || F.i === sel || F.surf >= 0 || F.act || F.lean || F.sit || F.drag || F.fetch || F.pickUp || F.pet || F.trick || F.leave || F.enter > 0) continue;
+      const d = Math.hypot(F.x - s0.x, (F.g - s0.g) / C); if (d < bd) { bd = d; best = F; } }
+    if (best) { best.push = { k, ...s0, on: false }; best.goal = null; best.goalStage = 0; best.pause = 0;
+      /* beim Laden sind sie schon am Schieben */
+      if (clock - (B.t0 ?? (B.t0 = clock)) < 1.5) { best.x = s0.x; best.g = s0.g; best.push.on = true; best.surf = -1; best.z0 = 0; } }
+  }
+}
+function pushPose(F, dt){
+  const B = letters.box; turnTo(F, B && B.dir > 0 ? 0 : Math.PI, 6 * dt);
+  F.ph += dt * 4.2;
+  const P = walkPose(F, { stride: .13 });
+  P.lean = .5; P.pelvis.f = -.05; P.pelvis.z -= .04; P.yaw = 0;
+  const bob = Math.sin(F.ph * 2) * .01;
+  P.handL = { r: .1, f: .33 + bob, z: .62 }; P.handR = { r: -.1, f: .33 - bob, z: .62 };
+  return P;
+}
+function revealPose(F, dt){
+  F.reveal.t += dt; F.a = Math.PI / 2;
+  const P = walkPose(F, { stride: 0 }), w = Math.sin(clock * 12);
+  P.handL = { r: .24, f: .05, z: 1.05 + w * .03 }; P.handR = { r: -.24, f: .05, z: 1.05 - w * .03 }; P.armsUp = true;
+  return P;
+}
+/* Antippen: vor dem Tag ein Hinweis, am Tag geht die Kiste auf */
+function tapBox(){
+  const B = letters.box; if (!B) return;
+  if (isOpen()) { BOX.shake = .55; boxNote('Not quite there yet.', 'You can open this box when the countdown is done.'); return; }
+  if (S.me == null || !ID) { BOX.shake = .55; boxNote('This box is for everyone who signed up.', 'Already in? Tap your figure to find yourself again.'); return; }
+  if (S.draws[S.me] != null) { showResult(); return; }
+  if (busy || BOX.anim) return;
+  busy = true;
+  api('me', ID).then(m => {
+    if (m.target == null) { busy = false; say('The draw is not ready yet. Try again in a moment.', true); return; }
+    if (m.targetName) S.claims[m.target] = m.targetName;
+    if (!fig(m.target)) syncFigs();
+    if (RM) { S.draws[S.me] = m.target; BOX.open = true; setBoxOpen(B, 1); busy = false; showResult(); return; }
+    BOX.anim = { t: 0, target: m.target };
+  }).catch(err => { busy = false; say(err.message || NET, true); });
+}
+function boxNote(h, t){ $('boxNoteT').textContent = h; $('boxNoteD').textContent = t; if (!$('boxNote').open) { faqAt = performance.now(); $('boxNote').showModal(); } }
+
 /* ---------- Santa: fliegt ab und zu mit Schlitten und Rentieren vorbei ----------
    Der Fahrplan hängt nur an der Serverzeit, darum sehen alle ihn im selben Moment.
    Mal wirft er Geschenke ab, mal holt er sie wieder. Antippen: er zerplatzt wie eine Seifenblase. */
@@ -816,6 +980,16 @@ function santaStep(dt){
   }
   GIFTS = GIFTS.filter(G => !G.gone);
 }
+/* nichts davor, das den Boden an dieser Stelle verdeckt (Buchstaben, Kiste) */
+function inView(x, g){
+  const B = letters.box;
+  for (let g2 = g + 2; g2 < g + FH * 4; g2 += 2) {
+    const id = idAt(x, g2); let h = 0;
+    if (id >= 0) h = hOf(id); else if (id === -2 && B && Math.abs(x - B.x) < B.w / 2 + B.ov + FH * .1 && Math.abs(g2 - B.gy) < (B.d / 2 + B.ov) * C + FH * .1) h = B.h + B.w * .3;
+    if (h && g2 - h * HZ < g) return false;
+  }
+  return true;
+}
 function dropGift(id, k, i){
   const f = SANTA.f, R = SANTA.R, y = SANTA.y + R * .1;
   /* Landeplatz nur auf freiem Boden, nie auf einem Buchstaben, sicher unterhalb des Schlittens */
@@ -824,7 +998,7 @@ function dropGift(id, k, i){
   let spot = null;
   for (let t = 0; t < 30 && !spot; t++) {
     const x = x0 + (t ? (hh(k, 40 + t) - .5) * FH * Math.min(3, t * .4) : 0), g = gMin + hh(k, 20 + i + t * 7) * (gMax - gMin);
-    if (x > FH * .4 && x < W - FH * .4 && idAt(x, g) === -1 && clearAt(-1, x, g, .2)) spot = { x, g };
+    if (x > FH * .4 && x < W - FH * .4 && idAt(x, g) === -1 && clearAt(-1, x, g, .2) && inView(x, g)) spot = { x, g };
   }
   if (!spot) return;
   GIFTS.push({ id, gift: true, x: spot.x, g: spot.g, y, vy: -FH * .4, landY: spot.g, state: 'fall', s: 1, spin: (hh(k, 30 + i) - .5) * .6 });
@@ -942,7 +1116,7 @@ function assignPoops(){
   for (const p of POOPS) {
     if (p.who && (!Fs.includes(p.who) || (p.who.fetch !== p && !(p.who.pickUp && p.who.pickUp.p === p)))) p.who = null;
     if (p.who || clock - p.born < 2.5) continue;
-    const ok = F => !F.santa && F.surf < 0 && !F.act && !F.lean && !F.sit && !F.drag && !F.leave && !(F.enter > 0) && !F.fetch && !F.pickUp && !F.pet && !F.trick && !F.flyHide && F.i !== sel && !F.skipPoop?.has(p);
+    const ok = F => !F.santa && !F.push && !F.reveal && F.surf < 0 && !F.act && !F.lean && !F.sit && !F.drag && !F.leave && !(F.enter > 0) && !F.fetch && !F.pickUp && !F.pet && !F.trick && !F.flyHide && F.i !== sel && !F.skipPoop?.has(p);
     const F = Fs.filter(ok).sort((a, b) => Math.hypot(a.x - p.x, a.g - p.g) - Math.hypot(b.x - p.x, b.g - p.g))[0];
     if (F) { p.who = F; F.fetch = p; F.fetchT = 0; F.goal = null; F.goalStage = 0; }
   }
@@ -1182,6 +1356,10 @@ function step(F, dt){
     const ax = D.pvx == null ? 0 : (D.svx - D.pvx) * idt, ay = D.pvy == null ? 0 : (D.svy - D.pvy) * idt; D.pvx = D.svx; D.pvy = D.svy;
     F.sw = F.sw || { th: 0, om: 0, ph: 0, pom: 0 };
     swingStep(F, cl(ax, -6000, 6000), cl(ay, -6000, 6000), dt, true);
+  } else if (F.reveal) {
+    P = revealPose(F, dt);
+  } else if (F.push && F.push.on) {
+    P = pushPose(F, dt);
   } else if (F.trick && !F.trick.wait && F.trick.kind !== 'pet') {
     P = trickPose(F, dt);
   } else if (F.pickUp) {
@@ -1213,7 +1391,7 @@ function step(F, dt){
       if (F.spot && !F.topGoal && !held && !F.leave && !F.trick && !F.sitDone && F.topT > .8) { F.sitDone = true; if (Math.random() < .55) F.sit = { t: 0, dur: 4 + Math.random() * 5, sp: F.spot, a0: F.a, x0: F.x, g0: F.g }; }
       if (F.topT > (F.topWait || 3) && F.spot && !F.topGoal && !F.sit && !held) { actFromPlan(F, F.spot, true); F.topT = 0; F.spot = null; }
     }
-    if (!onTop && !F.goal && !F.fetch && !F.trick && !F.santa && !held && !F.leave && !(F.enter > 0) && letters.spots.length && Math.random() < dt * .1) {
+    if (!onTop && !F.goal && !F.fetch && !F.trick && !F.santa && !F.push && !held && !F.leave && !(F.enter > 0) && letters.spots.length && Math.random() < dt * .1) {
       /* nur Stellen mit freiem Weg, freiem Einstieg und einem Buchstaben, auf dem niemand ist */
       const sight = sp => { const dx = sp.S2.x - F.x, dg = sp.S2.g - F.g, n = Math.ceil(Math.hypot(dx, dg / C) / (FH * .15)); for (let k = 1; k <= n; k++) if (!clearAt(-1, F.x + dx * k / n, F.g + dg * k / n)) return false; return true; };
       const busy = sp => Fs.some(o => o !== F && (o.goal === sp || o.spot === sp || o.surf === sp.id || (o.spot && o.spot.id === sp.id) || (o.goal && o.goal.id === sp.id) || (o.act && (o.act.to === sp.id || o.act.from === sp.id)) || Math.hypot(o.x - sp.S.x, (o.g - sp.S.g) / C) < FH * .6 || Math.hypot(o.x - sp.S2.x, (o.g - sp.S2.g) / C) < FH * .5));
@@ -1276,9 +1454,11 @@ function step(F, dt){
         if (F.stillT > .8) { let best = F.a, bn = -1; for (let k = 0; k < 16; k++) { const a2 = k * Math.PI / 8; let n = 0; for (const L of [.2, .4, .6, .8, 1]) { if (clear(F.x + Math.cos(a2) * L * FH, F.g + Math.sin(a2) * L * FH * C)) n++; else break; } if (n > bn) { bn = n; best = a2; } }
           F.escA = best; F.escT = 1.2; F.stillT = 0; F.goal = null; F.goalStage = 0; } }
       else F.stillT = 0;
-      const run = F.trick && F.trick.kind === 'pet' && !F.trick.wait && !F.trick.petting && DOG ? petSpot(F) : null;
+      const pushT = F.push && !F.push.on ? F.push : null;
+      const run = pushT ? pushT : F.trick && F.trick.kind === 'pet' && !F.trick.wait && !F.trick.petting && DOG ? petSpot(F) : null;
       /* so schnell wie nötig, damit das Streicheln überall im selben Moment beginnt */
-      if (run) { const d = Math.hypot(run.x - F.x, (run.g - F.g) / C) / FH; want = d < .08 ? 0 : Math.min(cl(d / Math.max(.3, PET_RUN - F.trick.t) * 1.15, .35, 9), d / Math.max(dt, 1 / 60) * .6); }
+      if (pushT) { const d = Math.hypot(pushT.x - F.x, (pushT.g - F.g) / C) / FH; want = d < .06 ? 0 : Math.min(F.want, d / Math.max(dt, 1 / 60) * .6); if (d < .1) { pushT.on = true; F.x = pushT.x; F.g = pushT.g; } }
+      else if (run) { const d = Math.hypot(run.x - F.x, (run.g - F.g) / C) / FH; want = d < .08 ? 0 : Math.min(cl(d / Math.max(.3, PET_RUN - F.trick.t) * 1.15, .35, 9), d / Math.max(dt, 1 / 60) * .6); }
       const desired = run ? Math.atan2((run.g - F.g) / C, run.x - F.x) : F.fetch && F.escT > 0 ? F.escA : F.fetch && !F.leave ? Math.atan2((F.fetch.g - F.g) / C, F.fetch.x - F.x) : F.leave ? (F.x < W / 2 ? Math.PI : 0) : F.enter > 0 ? (F.x < W / 2 ? 0 : Math.PI) : F.escT > 0 ? F.escA : F.goal ? Math.atan2((F.goal.S2.g - F.g) / C, F.goal.S2.x - F.x) : F.a + cl(turn, -4, 4) * dt;
       if (F.goal && F.escT <= 0) want *= cl(Math.hypot(F.goal.S2.x - F.x, (F.goal.S2.g - F.g) / C) / (FH * .7), .3, 1);
       let pick = null, da0 = 0;
@@ -1297,7 +1477,7 @@ function step(F, dt){
       /* steht die Figur knapp an einer Wand (nach dem Klettern), darf sie sich wegbewegen */
       if (clear(nx, ng) || (idAt(nx, ng) === F.surf && (free(F.a) || (F.escT > 0 && clearAt(F.surf, nx, ng, .1))))) { F.x = nx; F.g = ng; }
       else F.sp *= .5;
-      if (!F.goal && !F.fetch && !F.trick && !F.santa && !F.leave && !(F.enter > 0) && Math.random() < dt * .05) F.pause = 1 + Math.random() * 2.5;
+      if (!F.goal && !F.fetch && !F.trick && !F.santa && !F.push && !F.leave && !(F.enter > 0) && Math.random() < dt * .05) F.pause = 1 + Math.random() * 2.5;
     }
     if (DOG && F.surf < 0 && !F.goalStage) { const dx = F.x - DOG.x, dg = (F.g - DOG.g) / C, d = Math.hypot(dx, dg), m = FH * .34;
       if (d < m && d > .01) { const push = Math.min(m - d, FH * 1.5 * dt), px = F.x + dx / d * push, pg = F.g + dg / d * push * C; if (clear(px, pg)) { F.x = px; F.g = pg; } } }
@@ -1346,7 +1526,7 @@ function step(F, dt){
 function render(dt){
   for (const k in GL.parts) { GL.parts[k].nc = 0; GL.parts[k].ns = 0; }
   GL.wbox.count = 0;
-  dogStep(dt); dogTo3D(); poopTo3D(); assignPoops(); santaStep(dt);
+  dogStep(dt); dogTo3D(); poopTo3D(); assignPoops(); santaStep(dt); boxStep(dt);
   const c = ctx;
   c.setTransform(DPR, 0, 0, DPR, 0, 0);
   c.clearRect(0, 0, W, Hh);
@@ -1367,7 +1547,7 @@ function render(dt){
   for (let i = Fs.length - 1; i >= 0; i--) { const F = Fs[i]; if (F.leave && (F.x < -FH * .8 || F.x > W + FH * .8 || (F.surf >= 0 && !F.spot && !F.act))) Fs.splice(i, 1); }
   for (const k in GL.parts) { const P = GL.parts[k]; P.c.count = P.nc; P.sp.count = P.ns; P.c.instanceMatrix.needsUpdate = P.sp.instanceMatrix.needsUpdate = true; }
   /* erst Buchstaben allein (für die Konturen), dann alles (für die Figuren mit Verdeckung) */
-  const figs = [GL.wbox]; for (const k in GL.parts) figs.push(GL.parts[k].c, GL.parts[k].sp);
+  const figs = [GL.wbox, ...(GL.passB || [])]; for (const k in GL.parts) figs.push(GL.parts[k].c, GL.parts[k].sp);
   GL.wbox.instanceMatrix.needsUpdate = true;
   figs.forEach(m => m.visible = false);
   GL.r.setRenderTarget(GL.rt); GL.r.setClearColor(0x80ff80, 0); GL.r.clear(); GL.r.render(GL.scene, GL.cam);
@@ -1404,7 +1584,7 @@ function render(dt){
     const b = F.box; if (!b || F.flyHide) continue;
     const name = F.i === S.me ? 'You' : S.claims[F.i];
     let y = Math.min(b.head[1], b.y0 + FH * .12) - 2;
-    if (view === 'lobby' && S.draws[S.me] == null && eligible().includes(F.i)) {
+    if (view === 'lobby' && S.draws[S.me] == null && !F.reveal && !BOX.anim && eligible().includes(F.i)) {
       const hop = Math.sin(clock * 4 + F.seed) * 2 - (F.hit ? 6 : 0), s2 = (F.hit ? 1.5 : 1) * (desk() ? 1.2 : 1);
       drawGift(c, b.head[0], y - 10 + hop, 9 * s2); y -= 24 * s2;
     }
@@ -1523,7 +1703,7 @@ function setView(v, quiet){
     const mine = S.draws[S.me];
     $('drawBtn').textContent = mine != null ? 'See my draw' : 'Draw';
     if (open) say("You're in. The draw opens on December 1st at 12:00. You can play with your avatar in the meantime.");
-    else say(mine != null ? "You've already drawn." : 'Registration is closed. Everyone with a gift is in the pot. Tap Draw.');
+    else say(mine != null ? "You've opened your box. Tap it to see again." : 'Registration is closed. Tap the box to see who you are gifting.');
   }
   if (v === 'result') say('Psst. Keep it to yourself.');
   tickCd();
@@ -1572,6 +1752,7 @@ cv.addEventListener('pointerdown', e => {
   if (view !== 'pick' && view !== 'lobby') return;
   if (onSanta(e.clientX, e.clientY)) { if (popSanta()) rtSend({ t: 'santa', k: SANTA.k }); return; }
   if (onGift(e.clientX, e.clientY)) { openFaq(); return; }
+  if (onBox(e.clientX, e.clientY) && !pick(e.clientX, e.clientY)) { tapBox(); return; }
   if (onDog(e.clientX, e.clientY) && !pick(e.clientX, e.clientY)) { tapDog(); return; }
   const F = pick(e.clientX, e.clientY);
   if (!F) {
@@ -1584,9 +1765,9 @@ cv.addEventListener('pointerdown', e => {
   cv.classList.add('grabbing');
 });
 cv.addEventListener('pointermove', e => {
-  if (!drag) { const F = (view === 'pick' || view === 'lobby') && pick(e.clientX, e.clientY); cv.classList.toggle('grab', !!F); cv.classList.toggle('info', !F && (view === 'pick' || view === 'lobby') && (onInfo(e.clientX, e.clientY) || onDog(e.clientX, e.clientY) || onSanta(e.clientX, e.clientY) || onGift(e.clientX, e.clientY))); return; }
+  if (!drag) { const F = (view === 'pick' || view === 'lobby') && pick(e.clientX, e.clientY); cv.classList.toggle('grab', !!F); cv.classList.toggle('info', !F && (view === 'pick' || view === 'lobby') && (onInfo(e.clientX, e.clientY) || onDog(e.clientX, e.clientY) || onSanta(e.clientX, e.clientY) || onGift(e.clientX, e.clientY) || onBox(e.clientX, e.clientY))); return; }
   const F = drag.F;
-  if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 6) { drag.moved = true; F.act = null; F.lean = null; F.sit = null; F.fetch = null; F.pickUp = null; F.pet = null; endTrick(F); F.topGoal = null; F.topPath = null; F.drag = { vx: 0 }; F.dropZ = 0; }
+  if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 6) { drag.moved = true; F.act = null; F.lean = null; F.sit = null; F.fetch = null; F.pickUp = null; F.pet = null; F.push = null; endTrick(F); F.topGoal = null; F.topPath = null; F.drag = { vx: 0 }; F.dropZ = 0; }
   if (!drag.moved) return;
   const nx = e.clientX + drag.ox;
   F.drag.vx = lerp(F.drag.vx, (nx - F.x) / .016, .3);
@@ -1632,7 +1813,7 @@ function next(){
 }
 function back(){ if ((view !== 'name' && view !== 'code') || $('faq').open || busy) return; const c = view === 'name' ? $('nameC') : $('codeC'); setView('pick'); startFly('out', [{ F: fig(sel), wave: true }], c); if (S.claims[sel] != null || c === $('nameC')) { sel = null; setView('pick'); } }
 $('scroll').addEventListener('click', next);
-addEventListener('keydown', e => { if (e.target.closest('input') || $('notice').open || $('faq').open) return; if (['ArrowDown','PageDown'].includes(e.key)) next(); if (['ArrowUp','PageUp','Escape'].includes(e.key)) back(); });
+addEventListener('keydown', e => { if (e.target.closest('input') || $('notice').open || $('faq').open || $('boxNote').open) return; if (['ArrowDown','PageDown'].includes(e.key)) next(); if (['ArrowUp','PageUp','Escape'].includes(e.key)) back(); });
 
 $('nameForm').addEventListener('submit', e => {
   e.preventDefault();
@@ -1681,36 +1862,16 @@ function showResult(){
   $('resTxt').innerHTML = `Your gift goes to <b>${esc(S.claims[r])}</b>`;
   setView('result');
   startFly('in', [{ F: fig(S.me), turn: -.35 }, { F: fig(r), wave: true, turn: .35 }], $('resC'));
+  releaseReveal(); BOX.anim = null;
 }
-$('drawBtn').addEventListener('click', () => {
-  if (S.draws[S.me] != null) { showResult(); return; }
-  if (isOpen() || busy || !ID) return;
-  const pool = eligible();
-  if (!pool.length) { say('Only one person signed up, so there is nothing to draw.', true); return; }
-  busy = true; $('drawBtn').disabled = true;
-  api('me', ID).then(m => {
-    if (m.target == null) { busy = false; $('drawBtn').disabled = false; say('The draw is not ready yet. Try again in a moment.', true); return; }
-    if (m.targetName) S.claims[m.target] = m.targetName;
-    runDraw(pool, m.target);
-  }).catch(err => { busy = false; $('drawBtn').disabled = false; say(err.message || NET, true); });
-});
-function runDraw(pool, pickI){
-  $('drawBtn').disabled = true;
-  const hops = RM ? [] : Array.from({length: 9}, (_, k) => pool[k % pool.length]).concat(pickI);
-  let k = 0;
-  const tick = () => {
-    Fs.forEach(F => F.hit = false);
-    if (k < hops.length) { const H = fig(hops[k]); if (H) H.hit = true; k++; setTimeout(tick, 90 + k * 22); return; }
-    S.draws[S.me] = pickI; busy = false; $('drawBtn').disabled = false;
-    setTimeout(showResult, RM ? 0 : 300);
-  };
-  tick();
-}
+$('drawBtn').addEventListener('click', tapBox);
 $('info').addEventListener('click', openFaq);
 $('faqClose').addEventListener('click', () => $('faq').close());
 /* Hinweis vor der Namenseingabe: der echte Name, damit man weiss, für wen das Geschenk ist */
 let noticeT = 0;
 $('noticeOk').addEventListener('click', () => $('notice').close());
+$('boxNoteOk').addEventListener('click', () => $('boxNote').close());
+$('boxNote').addEventListener('click', e => { if (performance.now() - faqAt < 500) return; const r = $('boxNote').getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) $('boxNote').close(); });
 $('notice').addEventListener('close', () => { if (view === 'name') setTimeout(() => $('nameIn').focus(), 50); });
 /* Tipp neben das Fenster schliesst es; der Tipp, der es geöffnet hat, zählt nicht */
 let faqAt = 0;
